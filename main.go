@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto_options_screener/bybit"
+	"crypto_options_screener/exchange_client"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -92,14 +94,14 @@ func main() {
 			Name:     "bybit",
 			Symbols: []string{
 				"BTC",
-				"ETH",
+				// "ETH",
 				// "SOL",
 				// "DOGE",
 				// "XRP",
 				// "MNT",
 				// "XAUT",
 				// "HYPE",
-				"SPCX",
+				// "SPCX",
 				// "NVDA",
 				// "SNDK",
 				// "QQQ",
@@ -129,28 +131,26 @@ func main() {
 	//для каждой биржи
 	for _, exchange := range all_exchanges {
 
+		slog.Info("Состояние биржи", "Name", exchange.Name, "IsActive", exchange.IsActive)
+
 		//если биржа активна
 		if exchange.IsActive {
 
 			//запустим горутину для обработки получения данных
 			go func(ctx context.Context, ex Exchange) {
 
-				slog.Info("Запущен поток для биржи", "name", ex.Name)
-
 				//создадим клиента для
-				var client any
+				var client exchange_client.Client
 
 				switch ex.Name {
 				case "bybit":
-					slog.Info("Создаю клиента для Bybit", "exchange", ex.Name)
-					// client = bybit.NewClient() // Пример инициализации вашего клиента Bybit
-					client = "Объект_Клиента_Bybit" // Временно для теста
 
-				case "moex":
-					slog.Info("Создаю клиента для Binance", "exchange", ex.Name)
-					// client = binance.NewClient() // Пример инициализации вашего клиента Binance
-					client = "Объект_Клиента_Binance"
+					//создадим клиента
+					client = bybit.New("public_data", "public_data")
+
 				}
+
+				slog.Info("Создан клиент для биржи", "exchangeName", client.GetName())
 
 				select {}
 
