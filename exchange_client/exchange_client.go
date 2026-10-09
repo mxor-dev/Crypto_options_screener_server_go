@@ -1,7 +1,7 @@
 package exchange_client
 
 type Client interface {
-	GetName() string
+	GetExchangeName() string
 	GetSymbolInfo(symbol string) (SymbolInfo, error) //получает данные по симвоолу
 	// GetKline()                 // получает данные по perpetual или споту
 	// GetLinear()                //данные по фьючерсам
@@ -11,11 +11,9 @@ type Client interface {
 type SymbolInfo struct {
 	Symbol string
 
-	LinearMinOrderQty  string
-	LinearQtyPrecision string
-	LinearTickSize     string
+	LinearMinOrderQty string
+	LinearTickSize    string
 
-	OptionMinOrderQty  string
-	OptionQtyPrecision string
-	OptionTickSize     string
+	OptionMinOrderQty string
+	OptionTickSize    string
 }

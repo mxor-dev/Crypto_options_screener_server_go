@@ -19,6 +19,7 @@ import (
 
 // интервалы запроса данных
 type Intervals struct {
+	RestDataGetInterval    time.Duration
 	LinearDataGetInterval  time.Duration
 	OptionsDataGetInterval time.Duration
 }
@@ -101,7 +102,7 @@ func main() {
 				// "MNT",
 				// "XAUT",
 				// "HYPE",
-				// "SPCX",
+				"SPCX",
 				// "NVDA",
 				// "SNDK",
 				// "QQQ",
@@ -111,6 +112,7 @@ func main() {
 				// "SOXL",
 			},
 			Intervals: Intervals{
+				RestDataGetInterval:    200 * time.Millisecond,
 				LinearDataGetInterval:  2 * time.Second,
 				OptionsDataGetInterval: 2 * time.Second,
 			},
@@ -122,6 +124,7 @@ func main() {
 				"GZP",
 			},
 			Intervals: Intervals{
+				RestDataGetInterval:    200 * time.Millisecond,
 				LinearDataGetInterval:  2 * time.Second,
 				OptionsDataGetInterval: 2 * time.Second,
 			},
@@ -147,10 +150,24 @@ func main() {
 
 					//создадим клиента
 					client = bybit.New("public_data", "public_data")
-
 				}
 
-				slog.Info("Создан клиент для биржи", "exchangeName", client.GetName())
+				slog.Info("Создан клиент для биржи", "ExchangeName", client.GetExchangeName())
+
+				//для каждого символа для текущей биржи
+				for _, symbol := range ex.Symbols {
+
+					//получим данные для текущей монетки
+					symbolInfo, err := client.GetSymbolInfo(symbol)
+					if err != nil {
+						slog.Error("Ошибка при получении symbolInfo", "symbol", symbol)
+					}
+
+					slog.Info("symbolInfo", "symbol", symbol, "symbolInfo", symbolInfo)
+
+					//сделаем паузу между запросами
+					time.Sleep(ex.Intervals.RestDataGetInterval)
+				}
 
 				select {}
 
@@ -208,7 +225,7 @@ func main() {
 		slog.Error("Ошибка при остановке HTTP-сервера", "err", err)
 	}
 
-	slog.Info("Http-сервер отключен")
+	slog.Info("http-сервер отключен")
 
 	// Б. Мгновенно даем сигнал ВСЕМ фоновым горутинам сворачивать работу
 	// slog.Warn("📢 Отправляем сигнал отмены всем фоновым горутинам...")
