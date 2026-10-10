@@ -5,6 +5,7 @@ import (
 	"crypto_options_screener/bybit"
 	"crypto_options_screener/exchange_client"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -86,6 +87,15 @@ func main() {
 		slog.Error("Ошибка при загрузке файла .env")
 	}
 
+	//сформируем строку для подключения к БД
+	connString := fmt.Sprintf("postgres://%s:%s@%s:%s/%s",
+		os.Getenv("DB_USER"),
+		os.Getenv("DB_PASSWORD"),
+		os.Getenv("DB_HOST"),
+		os.Getenv("DB_PORT"),
+		os.Getenv("DB_NAME"),
+	)
+
 	//------ ЗАПРОС ДАННЫХ
 
 	//настройки для всех бирж
@@ -152,20 +162,25 @@ func main() {
 					client = bybit.New("public_data", "public_data")
 				}
 
-				slog.Info("Создан клиент для биржи", "ExchangeName", client.GetExchangeName())
+				//имя биржы
+				exchangeName := client.GetExchangeName()
+
+				slog.Info("Создан клиент для биржи", "exchangeName", exchangeName)
 
 				var allSymbolsInfo []exchange_client.SymbolInfo
 
 				//для каждого символа для текущей биржи
 				for _, symbol := range ex.Symbols {
 
+					fmt.Printf("Symbol=%s\n", symbol)
+
 					//получим данные для текущей монетки
 					symbolInfo, err := client.GetSymbolInfo(symbol)
 					if err != nil {
-						slog.Error("Ошибка при получении symbolInfo", "ExchangeName", client.GetExchangeName(), "symbol", symbol)
+						slog.Error("Ошибка при получении symbolInfo", "exchangeName", exchangeName, "symbol", symbol)
 					}
 
-					slog.Info("Получен symbolInfo", "ExchangeName", client.GetExchangeName(), "symbol", symbol, "symbolInfo", symbolInfo)
+					slog.Info("Получен symbolInfo", "exchangeName", exchangeName, "symbol", symbol, "symbolInfo", symbolInfo)
 
 					//добавим данные по символы в глобальный массив
 					allSymbolsInfo = append(allSymbolsInfo, symbolInfo)
@@ -174,7 +189,7 @@ func main() {
 					time.Sleep(ex.Intervals.RestDataGetInterval)
 				}
 
-				slog.Info("Итоговый allSymbolsInfo", "ExchangeName", client.GetExchangeName(), "allSymbolsInfo", allSymbolsInfo)
+				slog.Info("Итоговый allSymbolsInfo", "exchangeName", exchangeName, "allSymbolsInfo", allSymbolsInfo)
 
 				select {}
 
