@@ -160,10 +160,13 @@ func main() {
 					//получим данные для текущей монетки
 					symbolInfo, err := client.GetSymbolInfo(symbol)
 					if err != nil {
-						slog.Error("Ошибка при получении symbolInfo", "symbol", symbol)
+						slog.Error("Ошибка при получении symbolInfo", "ExchangeName", client.GetExchangeName(), "symbol", symbol)
 					}
 
-					slog.Info("symbolInfo", "symbol", symbol, "symbolInfo", symbolInfo)
+					slog.Info("Получен symbolInfo", "ExchangeName", client.GetExchangeName(), "symbol", symbol, "symbolInfo", symbolInfo)
+
+					//добавим данные по символы в глобальный массив
+					// allSymbolsInfo = append(allSymbolsInfo, symbolInfo) ***** не так
 
 					//сделаем паузу между запросами
 					time.Sleep(ex.Intervals.RestDataGetInterval)

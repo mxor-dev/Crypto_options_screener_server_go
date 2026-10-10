@@ -36,7 +36,7 @@ func (b *BybitClient) GetExchangeName() string {
 
 func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, error) {
 
-	slog.Info("Bybit: запрос GetSymbolInfo", "symbol", symbol)
+	slog.Info("Запрос GetSymbolInfo", "ExchangeName", b.ExchangeName, "symbol", symbol)
 
 	//ответ
 	result := exchange_client.SymbolInfo{
@@ -123,8 +123,8 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 	// fmt.Printf("dataOption:\n%+v\n", dataOption)
 
 	//запишем полученные поля в result
-	result.OptionMinOrderQty = dataLinear.Result.List[0].LotSizeFilter.MinOrderQty
-	result.OptionTickSize = dataLinear.Result.List[0].PriceFilter.TickSize
+	result.OptionMinOrderQty = dataOption.Result.List[0].LotSizeFilter.MinOrderQty
+	result.OptionTickSize = dataOption.Result.List[0].PriceFilter.TickSize
 
 	return result, nil
 }
