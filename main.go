@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"crypto_options_screener/bybit"
-	"crypto_options_screener/exchange_client"
+	"crypto_options_screener/pkg/exchanges/bybit"
+	"crypto_options_screener/pkg/exchanges/exchange_client"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"

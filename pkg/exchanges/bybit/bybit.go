@@ -6,7 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"crypto_options_screener/exchange_client"
+	"crypto_options_screener/pkg/convert"
+	"crypto_options_screener/pkg/exchanges/exchange_client"
 )
 
 // базовая точка доступа
@@ -43,14 +44,17 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 		ExchangeName: b.ExchangeName,
 		Symbol:       symbol,
 
-		SpotMinOrderQty: "",
-		SpotTickSize:    "",
+		SpotMinOrderQty:    "",
+		SpotTickSize:       "",
+		SpotPricePrecision: "",
 
-		LinearMinOrderQty: "",
-		LinearTickSize:    "",
+		LinearMinOrderQty:    "",
+		LinearTickSize:       "",
+		LinearPricePrecision: "",
 
-		OptionMinOrderQty: "",
-		OptionTickSize:    "",
+		OptionMinOrderQty:    "",
+		OptionTickSize:       "",
+		OptionPricePrecision: "",
 	}
 
 	//------ СПОТ
@@ -93,6 +97,10 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 		//запишем полученные поля в result
 		result.SpotMinOrderQty = dataSpot.Result.List[0].LotSizeFilter.MinOrderQty
 		result.SpotTickSize = dataSpot.Result.List[0].PriceFilter.TickSize
+
+		//найдем точность цены
+		result.SpotPricePrecision = convert.GetPrecisionFromString(result.SpotTickSize)
+
 	} else {
 		slog.Warn("Нет данных по споту", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataSpot", dataSpot)
 	}
@@ -139,6 +147,9 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 		//запишем полученные поля в result
 		result.LinearMinOrderQty = dataLinear.Result.List[0].LotSizeFilter.MinOrderQty
 		result.LinearTickSize = dataLinear.Result.List[0].PriceFilter.TickSize
+
+		//найдем точность цены
+		result.LinearPricePrecision = convert.GetPrecisionFromString(result.LinearTickSize)
 	} else {
 		slog.Warn("Нет данных по фьючерсам", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataLinear", dataLinear)
 	}
@@ -184,6 +195,9 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 		//запишем полученные поля в result
 		result.OptionMinOrderQty = dataOption.Result.List[0].LotSizeFilter.MinOrderQty
 		result.OptionTickSize = dataOption.Result.List[0].PriceFilter.TickSize
+
+		//найдем точность цены
+		result.OptionPricePrecision = convert.GetPrecisionFromString(result.OptionTickSize)
 	} else {
 		slog.Warn("Нет данных по фьючерсам", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataOption", dataOption)
 	}
