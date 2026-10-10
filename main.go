@@ -154,6 +154,8 @@ func main() {
 
 				slog.Info("Создан клиент для биржи", "ExchangeName", client.GetExchangeName())
 
+				var allSymbolsInfo []exchange_client.SymbolInfo
+
 				//для каждого символа для текущей биржи
 				for _, symbol := range ex.Symbols {
 
@@ -166,11 +168,13 @@ func main() {
 					slog.Info("Получен symbolInfo", "ExchangeName", client.GetExchangeName(), "symbol", symbol, "symbolInfo", symbolInfo)
 
 					//добавим данные по символы в глобальный массив
-					// allSymbolsInfo = append(allSymbolsInfo, symbolInfo) ***** не так
+					allSymbolsInfo = append(allSymbolsInfo, symbolInfo)
 
 					//сделаем паузу между запросами
 					time.Sleep(ex.Intervals.RestDataGetInterval)
 				}
+
+				slog.Info("Итоговый allSymbolsInfo", "ExchangeName", client.GetExchangeName(), "allSymbolsInfo", allSymbolsInfo)
 
 				select {}
 

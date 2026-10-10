@@ -40,7 +40,8 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 
 	//ответ
 	result := exchange_client.SymbolInfo{
-		Symbol: "BTC",
+		ExchangeName: b.ExchangeName,
+		Symbol:       "BTC",
 
 		LinearMinOrderQty: "",
 		LinearTickSize:    "",

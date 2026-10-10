@@ -9,7 +9,8 @@ type Client interface {
 }
 
 type SymbolInfo struct {
-	Symbol string
+	ExchangeName string
+	Symbol       string
 
 	LinearMinOrderQty string
 	LinearTickSize    string
