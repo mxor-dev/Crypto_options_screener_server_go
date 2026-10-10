@@ -43,12 +43,61 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 		ExchangeName: b.ExchangeName,
 		Symbol:       symbol,
 
+		SpotMinOrderQty: "",
+		SpotTickSize:    "",
+
 		LinearMinOrderQty: "",
 		LinearTickSize:    "",
 
 		OptionMinOrderQty: "",
 		OptionTickSize:    "",
 	}
+
+	//------ СПОТ
+
+	//сформируем строку запроса для линейных инструментов
+	urlSpot := fmt.Sprintf("%s/v5/market/instruments-info?symbol=%s&category=%s", baseEndPont, symbol+"USDT", "spot")
+
+	//выполним запрос
+	respSpot, err := http.Get(urlSpot)
+	if err != nil {
+		return exchange_client.SymbolInfo{}, fmt.Errorf("Сетевая ошибка: %w", err)
+	}
+	defer respSpot.Body.Close()
+
+	//краткая структура ответа
+	type SpotResponse struct {
+		Result struct {
+			List []struct {
+				Symbol      string `json:"symbol"`
+				PriceFilter struct {
+					TickSize string `json:"tickSize"`
+				} `json:"priceFilter"`
+				LotSizeFilter struct {
+					MinOrderQty string `json:"minOrderQty"`
+				} `json:"lotSizeFilter"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	//переменная под данные сервера
+	var dataSpot SpotResponse
+
+	// Парсим данные в формате JSON
+	if err := json.NewDecoder(respSpot.Body).Decode(&dataSpot); err != nil {
+		return exchange_client.SymbolInfo{}, fmt.Errorf("Ошибка парсинга: %w", err)
+	}
+
+	//если есть данные по споту
+	if len(dataSpot.Result.List) > 0 {
+		//запишем полученные поля в result
+		result.SpotMinOrderQty = dataSpot.Result.List[0].LotSizeFilter.MinOrderQty
+		result.SpotTickSize = dataSpot.Result.List[0].PriceFilter.TickSize
+	} else {
+		slog.Warn("Нет данных по споту", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataSpot", dataSpot)
+	}
+
+	//------ ФЬЮЧЕРСЫ
 
 	//сформируем строку запроса для линейных инструментов
 	urlLinear := fmt.Sprintf("%s/v5/market/instruments-info?symbol=%s&category=%s", baseEndPont, symbol+"USDT", "linear")
@@ -85,9 +134,16 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 
 	// fmt.Printf("dataLinear:\n%+v\n", dataLinear)
 
-	//запишем полученные поля в result
-	result.LinearMinOrderQty = dataLinear.Result.List[0].LotSizeFilter.MinOrderQty
-	result.LinearTickSize = dataLinear.Result.List[0].PriceFilter.TickSize
+	//если есть данные по фьючерсам
+	if len(dataLinear.Result.List) > 0 {
+		//запишем полученные поля в result
+		result.LinearMinOrderQty = dataLinear.Result.List[0].LotSizeFilter.MinOrderQty
+		result.LinearTickSize = dataLinear.Result.List[0].PriceFilter.TickSize
+	} else {
+		slog.Warn("Нет данных по фьючерсам", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataLinear", dataLinear)
+	}
+
+	//------ ОПЦТОНЫ
 
 	//софрмируем url для опционов
 	urlOptions := fmt.Sprintf("%s/v5/market/instruments-info?baseCoin=%s&category=%s", baseEndPont, symbol, "option")
@@ -123,9 +179,14 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 
 	// fmt.Printf("dataOption:\n%+v\n", dataOption)
 
-	//запишем полученные поля в result
-	result.OptionMinOrderQty = dataOption.Result.List[0].LotSizeFilter.MinOrderQty
-	result.OptionTickSize = dataOption.Result.List[0].PriceFilter.TickSize
+	//если есть данные по опционам
+	if len(dataOption.Result.List) > 0 {
+		//запишем полученные поля в result
+		result.OptionMinOrderQty = dataOption.Result.List[0].LotSizeFilter.MinOrderQty
+		result.OptionTickSize = dataOption.Result.List[0].PriceFilter.TickSize
+	} else {
+		slog.Warn("Нет данных по фьючерсам", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataOption", dataOption)
+	}
 
 	return result, nil
 }

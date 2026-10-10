@@ -2,18 +2,21 @@ package main
 
 import (
 	"context"
-	"crypto_options_screener/bybit"
-	"crypto_options_screener/exchange_client"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"crypto_options_screener/bybit"
+	"crypto_options_screener/exchange_client"
+
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/lmittmann/tint"
 )
@@ -87,14 +90,34 @@ func main() {
 		slog.Error("Ошибка при загрузке файла .env")
 	}
 
+	//------- БАЗА ДАННЫХ
+
+	//сформируем url для подключения к бд - поскольку в пароле могут быть @ и другие символы, формировать нужно именно так
+	u := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD")),
+		Host:   fmt.Sprintf("%s:%s", os.Getenv("DB_HOST"), os.Getenv("DB_PORT")),
+		Path:   os.Getenv("DB_NAME"),
+	}
+
 	//сформируем строку для подключения к БД
-	connString := fmt.Sprintf("postgres://%s:%s@%s:%s/%s",
-		os.Getenv("DB_USER"),
-		os.Getenv("DB_PASSWORD"),
-		os.Getenv("DB_HOST"),
-		os.Getenv("DB_PORT"),
-		os.Getenv("DB_NAME"),
-	)
+	dbUrl := u.String()
+
+	pool, err := pgxpool.New(context.Background(), dbUrl)
+	if err != nil {
+		slog.Error("Не удалось создать пул соединений для базы данных", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	//тест соединение с бд
+	err = pool.Ping(context.Background())
+	if err != nil {
+		slog.Error("Не удалось подключиться к базе данных", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("Соединение с базой данных установлено.")
 
 	//------ ЗАПРОС ДАННЫХ
 
@@ -167,8 +190,6 @@ func main() {
 
 				slog.Info("Создан клиент для биржи", "exchangeName", exchangeName)
 
-				var allSymbolsInfo []exchange_client.SymbolInfo
-
 				//для каждого символа для текущей биржи
 				for _, symbol := range ex.Symbols {
 
@@ -182,14 +203,49 @@ func main() {
 
 					slog.Info("Получен symbolInfo", "exchangeName", exchangeName, "symbol", symbol, "symbolInfo", symbolInfo)
 
-					//добавим данные по символы в глобальный массив
-					allSymbolsInfo = append(allSymbolsInfo, symbolInfo)
+					//запишем данные в бд
+					query := `
+						INSERT INTO all_symbols_info (
+							exchange_name, symbol, 
+							spot_min_order_qty, spot_tick_size, 
+							linear_min_order_qty, linear_tick_size, 
+							option_min_order_qty, option_tick_size
+						) 
+						VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+						ON CONFLICT (exchange_name, symbol) 
+						DO UPDATE SET 
+							spot_min_order_qty = EXCLUDED.spot_min_order_qty,
+							spot_tick_size = EXCLUDED.spot_tick_size,
+							linear_min_order_qty = EXCLUDED.linear_min_order_qty,
+							linear_tick_size = EXCLUDED.linear_tick_size,
+							option_min_order_qty = EXCLUDED.option_min_order_qty,
+							option_tick_size = EXCLUDED.option_tick_size;
+					`
+
+					// 2. Безопасное выполнение запроса через пул соединений
+					_, err = pool.Exec(
+						context.Background(),
+						query,
+						symbolInfo.ExchangeName,
+						symbolInfo.Symbol,
+						symbolInfo.SpotMinOrderQty,
+						symbolInfo.SpotTickSize,
+						symbolInfo.LinearMinOrderQty,
+						symbolInfo.LinearTickSize,
+						symbolInfo.OptionMinOrderQty,
+						symbolInfo.OptionTickSize,
+					)
+					if err != nil {
+						slog.Error("Не удалось сохранить символ в базу данных",
+							"exchange", symbolInfo.ExchangeName,
+							"symbol", symbolInfo.Symbol,
+							"error", err,
+						)
+					}
 
 					//сделаем паузу между запросами
 					time.Sleep(ex.Intervals.RestDataGetInterval)
 				}
-
-				slog.Info("Итоговый allSymbolsInfo", "exchangeName", exchangeName, "allSymbolsInfo", allSymbolsInfo)
 
 				select {}
 

@@ -12,6 +12,9 @@ type SymbolInfo struct {
 	ExchangeName string
 	Symbol       string
 
+	SpotMinOrderQty string
+	SpotTickSize    string
+
 	LinearMinOrderQty string
 	LinearTickSize    string
 
