@@ -2,8 +2,8 @@ package exchange_client
 
 type Client interface {
 	GetExchangeName() string
-	GetSymbolInfo(symbol string) (SymbolInfo, error) //получает данные по симвоолу
-	// GetKline()                 // получает данные по perpetual или споту
+	GetSymbolInfo(symbol string) (SymbolInfo, error)                                                //получает данные по симвоолу
+	GetKline(symbol string, category string, klineInterval string, limit string) (KlineData, error) // получает данные свечей по perpetual или споту
 	// GetLinear()                //данные по фьючерсам
 	// GetOptions()               //данные по опционам
 }
@@ -23,4 +23,15 @@ type SymbolInfo struct {
 	OptionMinOrderQty    string
 	OptionTickSize       string
 	OptionPricePrecision string
+}
+
+type KlineData struct {
+	ExchangeName string
+	Symbol       string
+
+	Category      string
+	KlineInterval string
+
+	KlineData [][]string
+	DateTime  string
 }

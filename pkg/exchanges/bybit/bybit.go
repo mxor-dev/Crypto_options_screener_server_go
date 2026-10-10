@@ -204,3 +204,70 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 
 	return result, nil
 }
+
+func (b *BybitClient) GetKline(symbol string, category string, klineInterval string, limit string) (exchange_client.KlineData, error) {
+
+	slog.Info("Запрос GetKline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval)
+
+	result := exchange_client.KlineData{
+		ExchangeName: b.ExchangeName,
+		Symbol:       symbol,
+
+		Category:      category,
+		KlineInterval: klineInterval,
+
+		KlineData: [][]string{},
+		DateTime:  "",
+	}
+
+	//массив для конвертации интервала
+	intervals := map[string]string{
+		"5m":  "5",
+		"15m": "15",
+		"1h":  "60",
+		"1D":  "D",
+		"1W":  "W",
+	}
+
+	//конвертируем интервал
+	klineIntervalConverted := intervals[klineInterval]
+
+	//сформируем строку запроса для линейных инструментов
+	url := fmt.Sprintf("%s/v5/market/kline?symbol=%s&category=%s&interval=%s&limit=%s", baseEndPont, symbol+"USDT", category, klineIntervalConverted, limit)
+
+	//выполним запрос
+	respSpot, err := http.Get(url)
+	if err != nil {
+		return exchange_client.KlineData{}, fmt.Errorf("Сетевая ошибка: %w", err)
+	}
+	defer respSpot.Body.Close()
+
+	//краткая структура ответа
+	type Response struct {
+		Result struct {
+			Symbol string     `json:"symbol"`
+			List   [][]string `json:"list"`
+		} `json:"result"`
+	}
+
+	//переменная под данные сервера
+	var data Response
+
+	// Парсим данные в формате JSON
+	if err := json.NewDecoder(respSpot.Body).Decode(&data); err != nil {
+		return exchange_client.KlineData{}, fmt.Errorf("Ошибка парсинга: %w", err)
+	}
+
+	// fmt.Printf("Получены данные: \n%+v\n", data)
+
+	//если есть данные
+	if len(data.Result.List) > 0 {
+		//запишем полученные поля в result
+		result.KlineData = data.Result.List
+		result.DateTime = convert.GetRoundedUTCTime()
+	} else {
+		slog.Warn("Данные kline отсутствуют", "ExchangeName", b.ExchangeName, "symbol", symbol, "data", data)
+	}
+
+	return result, nil
+}

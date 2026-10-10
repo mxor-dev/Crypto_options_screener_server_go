@@ -247,6 +247,21 @@ func main() {
 					time.Sleep(ex.Intervals.RestDataGetInterval)
 				}
 
+				//для каждого символа для текущей биржи
+				for _, symbol := range ex.Symbols {
+
+					klineData, err := client.GetKline(symbol, "spot", "15m", "1000")
+					if err != nil {
+						slog.Error("Ошибка при получении kline", "exchangeName", exchangeName, "symbol", symbol)
+					}
+					// client.GetKline(symbol, "linear", "15m")
+
+					slog.Info("Получены данные kline", "exchangeName", exchangeName, "symbol", symbol, "len(klineData.KlineData)", len(klineData.KlineData))
+
+					//сделаем паузу между запросами
+					time.Sleep(ex.Intervals.RestDataGetInterval)
+				}
+				//
 				select {}
 
 			}(ctx, exchange)
@@ -257,7 +272,7 @@ func main() {
 	//------- HTTP СЕРВЕР
 
 	//порт http сервера
-	httpServerPort := os.Getenv("httpServerPort")
+	httpServerPort := os.Getenv("HTTP_SERVER_PORT")
 
 	//переведем gin в режим релиза
 	gin.SetMode(gin.ReleaseMode)
