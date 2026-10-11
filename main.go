@@ -60,14 +60,8 @@ func main() {
 
 	//------- ГЛАВНЫЙ КОНТЕКСТ
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel() // Защита от утечки ресурсов
-
-	//------- ПЕРЕХВАТ СИСТЕМНЫХ СИГНАЛОВ
-
-	// Перехват системных сигналов Ctrl+C
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	//------- ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
 
@@ -112,35 +106,23 @@ func main() {
 		{
 			IsActive: true,
 			Name:     "bybit",
-			Symbols: []string{
-				"BTC",
-				// "ETH",
-				// "SOL",
-				// "DOGE",
-				// "XRP",
-				// "MNT",
-				// "XAUT",
-				// "HYPE",
-				"SPCX",
-				// "NVDA",
-				// "SNDK",
-				// "QQQ",
-				// "SKHY",
-				// "MU",
-				// "TSLA",
-				// "SOXL",
-			},
-			Intervals: shared.Intervals{
-				RestDataGetInterval:    200 * time.Millisecond,
-				LinearDataGetInterval:  2 * time.Second,
-				OptionsDataGetInterval: 2 * time.Second,
-			},
-		},
-		{
-			IsActive: false,
-			Name:     "moex",
-			Symbols: []string{
-				"GZP",
+			Symbols: []shared.Symbols{
+				{Symbol: "BTC", DataToGet: []string{"linear", "options"}},
+				{Symbol: "SPCX", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "ETH", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "SOL", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "DOGE", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "XRP", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "MNT", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "XAUT", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "HYPE", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "NVDA", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "SNDK", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "QQQ", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "SKHY", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "MU", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "TSLA", DataToGet: []string{"linear", "options"}},
+				// {Symbol: "SOXL", DataToGet: []string{"linear", "options"}},
 			},
 			Intervals: shared.Intervals{
 				RestDataGetInterval:    200 * time.Millisecond,
@@ -169,27 +151,29 @@ func main() {
 		if exchange.IsActive {
 
 			//запустим горутину для обработки получения данных
-			go func(ctx context.Context, ex shared.Exchange) {
+			go func() {
 
-				switch ex.Name {
+				switch exchange.Name {
 				case "bybit":
 
 					//создадим клиента
 					exchange.Client = bybit.New("public_data", "public_data")
 
-					slog.Info("Создан клиент для биржи", "exchangeName", "bybit")
+					slog.Info("Создан клиент для биржи", "exchangeName", exchange.Name)
 				}
 
-				//получим информацию для всех монет на бирже
-				workers.GetAllSymbolsInfo(exchange, pool)
+				//получим информацию для всех монет на бирже и сохраним в бд
+				workers.GetAllSymbolsInfo(pool, exchange)
 
-				//получаем данные kline для всех монет и всех интервалов
-				workers.GetKlineDataInitial(exchange, pool, allKlineIntervals)
+				//получаем данные kline для всех монет, всех интервалов и сохраним в бд
+				workers.GetKlineDataInitial(pool, exchange, allKlineIntervals)
 
-				//
+				//запускаем горутину воркера для получения данных kline по тикеру
+				go workers.GetKlineDataTimer(ctx, pool, exchange)
+				//имитация работы
 				select {}
 
-			}(ctx, exchange)
+			}()
 		}
 
 	}
@@ -230,9 +214,11 @@ func main() {
 	}()
 
 	//обработка сигналов выхода
-	<-quit
+	<-ctx.Done()
 
 	slog.Warn("Получен сигнал выключения! Начинаем контролируемую остановку...")
+
+	slog.Info("Ожидаем отключение http-сервера...")
 
 	// таймер для отключения http сервера
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -242,15 +228,10 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		slog.Error("Ошибка при остановке HTTP-сервера", "err", err)
 	}
-
 	slog.Info("http-сервер отключен")
 
-	// Б. Мгновенно даем сигнал ВСЕМ фоновым горутинам сворачивать работу
-	// slog.Warn("📢 Отправляем сигнал отмены всем фоновым горутинам...")
-	// cancel()
-
-	// // В. Блокируем поток main и ждем, пока ВСЕ горутины вызовут wg.Done()
-	// wg.Wait()
+	slog.Info("Ожидаем отключение фоновых задач...")
+	time.Sleep(5 * time.Second)
 
 	slog.Info("Работа программы завершена")
 }

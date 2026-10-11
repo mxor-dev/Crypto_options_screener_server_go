@@ -13,11 +13,17 @@ type Intervals struct {
 	OptionsDataGetInterval time.Duration
 }
 
+// символы
+type Symbols struct {
+	Symbol    string
+	DataToGet []string
+}
+
 // биржа
 type Exchange struct {
 	IsActive  bool
 	Name      string
-	Symbols   []string
+	Symbols   []Symbols
 	Intervals Intervals
 	Client    exchange_client.Client
 }
