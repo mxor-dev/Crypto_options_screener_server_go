@@ -2,14 +2,62 @@ package workers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"crypto_options_screener/pkg/exchanges/exchange_client"
 	"crypto_options_screener/pkg/shared"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+//------- СОХРАНЕНИЕ ДАННЫХ БД
+
+// сохраняет данные kline в бд
+func SaveKlineToDb(klineData exchange_client.KlineData, pool *pgxpool.Pool) {
+
+	// Переводим двумерный массив [][]string в JSON-строку
+	jsonData, err := json.Marshal(klineData.KlineData)
+	if err != nil {
+		slog.Error("Ошибка при создании json из kline", "func", "SaveKlineToDb", "exchangeName", klineData.ExchangeName, "symbol", klineData.Symbol, "err", err)
+	}
+
+	// 2. Пишем SQL-запрос с плейсхолдерами
+	query := `
+		INSERT INTO all_kline_data_buffer_new (
+			exchange_name, 
+			symbol, 
+			category, 
+			kline_interval, 
+			kline_data, 
+			time_ms
+		) VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (exchange_name, symbol, category, kline_interval) 
+		DO UPDATE SET 
+			kline_data = EXCLUDED.kline_data,
+			time_ms = EXCLUDED.time_ms;
+	`
+
+	// 3. Выполняем запрос через пул соединений
+	_, err = pool.Exec(
+		context.Background(),
+		query,
+		klineData.ExchangeName,
+		klineData.Symbol,
+		klineData.Category,
+		klineData.KlineInterval,
+		string(jsonData),
+		klineData.Time,
+	)
+	if err != nil {
+		slog.Error("Ошибка при сохранении данных в БД", "func", "SaveKlineToDb", "exchangeName", klineData.ExchangeName, "symbol", klineData.Symbol, "err", err)
+	}
+
+}
+
+//------- ПОЛУЧЕНИЕ ДАННЫХ С БИРЖ
 
 // получает данные по всем монеткам для конкретной биржи и сохраняеет ее в БД
 func GetAllSymbolsInfo(exchange shared.Exchange, pool *pgxpool.Pool) {
@@ -22,14 +70,14 @@ func GetAllSymbolsInfo(exchange shared.Exchange, pool *pgxpool.Pool) {
 		//получим данные для текущей монетки
 		symbolInfo, err := exchange.Client.GetSymbolInfo(symbol)
 		if err != nil {
-			slog.Error("Ошибка при получении symbolInfo", "exchangeName", exchange.Name, "symbol", symbol)
+			slog.Error("Ошибка при получении", "func", "GetAllSymbolsInfo", "exchangeName", exchange.Name, "symbol", symbol)
 		}
 
 		slog.Info("Получен symbolInfo", "exchangeName", exchange.Name, "symbol", symbol, "symbolInfo", symbolInfo)
 
 		//запишем данные в бд
 		query := `
-			INSERT INTO all_symbols_info (
+			INSERT INTO all_symbols_info_new (
 				exchange_name, symbol, 
 				spot_min_order_qty, spot_tick_size, 
 				linear_min_order_qty, linear_tick_size, 
@@ -60,11 +108,7 @@ func GetAllSymbolsInfo(exchange shared.Exchange, pool *pgxpool.Pool) {
 			symbolInfo.OptionTickSize,
 		)
 		if err != nil {
-			slog.Error("Не удалось сохранить символ в базу данных",
-				"exchange", symbolInfo.ExchangeName,
-				"symbol", symbolInfo.Symbol,
-				"error", err,
-			)
+			slog.Error("Ошибка при сохранении данных в БД", "func", "GetAllSymbolsInfo", "exchangeName", exchange.Name, "symbol", symbol)
 		}
 
 		//сделаем паузу между запросами
@@ -78,13 +122,22 @@ func GetKlineDataInitial(exchange shared.Exchange, pool *pgxpool.Pool, allKlineI
 	//для каждого символа для текущей биржи
 	for _, symbol := range exchange.Symbols {
 
-		klineData, err := exchange.Client.GetKline(symbol, "spot", "15m", "1000")
-		if err != nil {
-			slog.Error("Ошибка при получении kline", "exchangeName", exchange.Name, "symbol", symbol)
-		}
-		// client.GetKline(symbol, "linear", "15m")
+		//для каждого интервала
+		for _, interval := range allKlineIntervals {
 
-		slog.Info("Получены данные kline", "exchangeName", exchange.Name, "symbol", symbol, "len(klineData.KlineData)", len(klineData.KlineData))
+			//получим данные
+			// klineData, err := exchange.Client.GetKline(symbol, "spot", interval, "1000")
+			klineData, err := exchange.Client.GetKline(symbol, "linear", interval, "1000")
+
+			if err != nil {
+				slog.Error("Ошибка при получении kline", "exchangeName", exchange.Name, "symbol", symbol, "err", err)
+			}
+
+			slog.Info("Получены данные kline", "func", "GetKlineDataInitial", "exchangeName", exchange.Name, "symbol", symbol, "len(klineData.KlineData)", len(klineData.KlineData))
+
+			//сохранение данных в бд
+			SaveKlineToDb(klineData, pool)
+		}
 
 		//сделаем паузу между запросами
 		time.Sleep(exchange.Intervals.RestDataGetInterval)

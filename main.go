@@ -150,14 +150,13 @@ func main() {
 		},
 	}
 
-	//интервалы
-	// allKlineIntervals := []string{
-	// 	"15m",
-	// 	"30m",
-	// 	"1h",
-	// 	"1D",
-	// 	"1W",
-	// }
+	//интервалы kline
+	allKlineIntervals := []string{
+		"15m",
+		"1h",
+		"1D",
+		"1W",
+	}
 
 	//------ ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ
 
@@ -185,7 +184,7 @@ func main() {
 				workers.GetAllSymbolsInfo(exchange, pool)
 
 				//получаем данные kline для всех монет и всех интервалов
-				// workers.GetKlineDataInitial(exchange, pool, allKlineIntervals)
+				workers.GetKlineDataInitial(exchange, pool, allKlineIntervals)
 
 				//
 				select {}

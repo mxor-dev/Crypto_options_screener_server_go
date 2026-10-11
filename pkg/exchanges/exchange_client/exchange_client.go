@@ -33,5 +33,5 @@ type KlineData struct {
 	KlineInterval string
 
 	KlineData [][]string
-	DateTime  string
+	Time      int64
 }

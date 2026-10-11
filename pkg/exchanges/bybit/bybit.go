@@ -217,7 +217,7 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 		KlineInterval: klineInterval,
 
 		KlineData: [][]string{},
-		DateTime:  "",
+		Time:      0,
 	}
 
 	//массив для конвертации интервала
@@ -264,7 +264,7 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	if len(data.Result.List) > 0 {
 		//запишем полученные поля в result
 		result.KlineData = data.Result.List
-		result.DateTime = convert.GetRoundedUTCTime()
+		result.Time = convert.GetRoundedUTCTimeMs()
 	} else {
 		slog.Warn("Данные kline отсутствуют", "ExchangeName", b.ExchangeName, "symbol", symbol, "data", data)
 	}
