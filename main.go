@@ -13,28 +13,14 @@ import (
 	"time"
 
 	"crypto_options_screener/pkg/exchanges/bybit"
-	"crypto_options_screener/pkg/exchanges/exchange_client"
+	"crypto_options_screener/pkg/shared"
+	"crypto_options_screener/pkg/workers"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/lmittmann/tint"
 )
-
-// интервалы запроса данных
-type Intervals struct {
-	RestDataGetInterval    time.Duration
-	LinearDataGetInterval  time.Duration
-	OptionsDataGetInterval time.Duration
-}
-
-// биржа
-type Exchange struct {
-	IsActive  bool
-	Name      string
-	Symbols   []string
-	Intervals Intervals
-}
 
 func main() {
 
@@ -122,7 +108,7 @@ func main() {
 	//------ ЗАПРОС ДАННЫХ
 
 	//настройки для всех бирж
-	all_exchanges := []Exchange{
+	allExchnges := []shared.Exchange{
 		{
 			IsActive: true,
 			Name:     "bybit",
@@ -144,7 +130,7 @@ func main() {
 				// "TSLA",
 				// "SOXL",
 			},
-			Intervals: Intervals{
+			Intervals: shared.Intervals{
 				RestDataGetInterval:    200 * time.Millisecond,
 				LinearDataGetInterval:  2 * time.Second,
 				OptionsDataGetInterval: 2 * time.Second,
@@ -156,7 +142,7 @@ func main() {
 			Symbols: []string{
 				"GZP",
 			},
-			Intervals: Intervals{
+			Intervals: shared.Intervals{
 				RestDataGetInterval:    200 * time.Millisecond,
 				LinearDataGetInterval:  2 * time.Second,
 				OptionsDataGetInterval: 2 * time.Second,
@@ -164,8 +150,17 @@ func main() {
 		},
 	}
 
+	//интервалы
+	// allKlineIntervals := []string{
+	// 	"15m",
+	// 	"30m",
+	// 	"1h",
+	// 	"1D",
+	// 	"1W",
+	// }
+
 	//для каждой биржи
-	for _, exchange := range all_exchanges {
+	for _, exchange := range allExchnges {
 
 		slog.Info("Состояние биржи", "Name", exchange.Name, "IsActive", exchange.IsActive)
 
@@ -173,94 +168,23 @@ func main() {
 		if exchange.IsActive {
 
 			//запустим горутину для обработки получения данных
-			go func(ctx context.Context, ex Exchange) {
-
-				//создадим клиента для
-				var client exchange_client.Client
+			go func(ctx context.Context, ex shared.Exchange) {
 
 				switch ex.Name {
 				case "bybit":
 
 					//создадим клиента
-					client = bybit.New("public_data", "public_data")
+					exchange.Client = bybit.New("public_data", "public_data")
+
+					slog.Info("Создан клиент для биржи", "exchangeName", "bybit")
 				}
 
-				//имя биржы
-				exchangeName := client.GetExchangeName()
+				//получим информацию для всех монет на бирже
+				workers.GetAllSymbolsInfo(exchange, pool)
 
-				slog.Info("Создан клиент для биржи", "exchangeName", exchangeName)
+				//получаем данные kline для всех монет и всех интервалов
+				// workers.GetKlineDataInitial(exchange, pool, allKlineIntervals)
 
-				//для каждого символа для текущей биржи
-				for _, symbol := range ex.Symbols {
-
-					fmt.Printf("Symbol=%s\n", symbol)
-
-					//получим данные для текущей монетки
-					symbolInfo, err := client.GetSymbolInfo(symbol)
-					if err != nil {
-						slog.Error("Ошибка при получении symbolInfo", "exchangeName", exchangeName, "symbol", symbol)
-					}
-
-					slog.Info("Получен symbolInfo", "exchangeName", exchangeName, "symbol", symbol, "symbolInfo", symbolInfo)
-
-					//запишем данные в бд
-					query := `
-						INSERT INTO all_symbols_info (
-							exchange_name, symbol, 
-							spot_min_order_qty, spot_tick_size, 
-							linear_min_order_qty, linear_tick_size, 
-							option_min_order_qty, option_tick_size
-						) 
-						VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-						ON CONFLICT (exchange_name, symbol) 
-						DO UPDATE SET 
-							spot_min_order_qty = EXCLUDED.spot_min_order_qty,
-							spot_tick_size = EXCLUDED.spot_tick_size,
-							linear_min_order_qty = EXCLUDED.linear_min_order_qty,
-							linear_tick_size = EXCLUDED.linear_tick_size,
-							option_min_order_qty = EXCLUDED.option_min_order_qty,
-							option_tick_size = EXCLUDED.option_tick_size;
-					`
-
-					// 2. Безопасное выполнение запроса через пул соединений
-					_, err = pool.Exec(
-						context.Background(),
-						query,
-						symbolInfo.ExchangeName,
-						symbolInfo.Symbol,
-						symbolInfo.SpotMinOrderQty,
-						symbolInfo.SpotTickSize,
-						symbolInfo.LinearMinOrderQty,
-						symbolInfo.LinearTickSize,
-						symbolInfo.OptionMinOrderQty,
-						symbolInfo.OptionTickSize,
-					)
-					if err != nil {
-						slog.Error("Не удалось сохранить символ в базу данных",
-							"exchange", symbolInfo.ExchangeName,
-							"symbol", symbolInfo.Symbol,
-							"error", err,
-						)
-					}
-
-					//сделаем паузу между запросами
-					time.Sleep(ex.Intervals.RestDataGetInterval)
-				}
-
-				//для каждого символа для текущей биржи
-				for _, symbol := range ex.Symbols {
-
-					klineData, err := client.GetKline(symbol, "spot", "15m", "1000")
-					if err != nil {
-						slog.Error("Ошибка при получении kline", "exchangeName", exchangeName, "symbol", symbol)
-					}
-					// client.GetKline(symbol, "linear", "15m")
-
-					slog.Info("Получены данные kline", "exchangeName", exchangeName, "symbol", symbol, "len(klineData.KlineData)", len(klineData.KlineData))
-
-					//сделаем паузу между запросами
-					time.Sleep(ex.Intervals.RestDataGetInterval)
-				}
 				//
 				select {}
 
