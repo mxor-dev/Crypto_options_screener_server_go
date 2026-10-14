@@ -315,7 +315,7 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 
 		//если работа программы остановлены
 		case <-ctx.Done():
-			// Завершаем работу по контексту
+			// Завершаем работу функции по контексту - все defer отрабатают автоматически
 			return
 		}
 	}
@@ -615,4 +615,45 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 		}
 	}
 
+}
+
+// воркер для получения данных по опционам по таймеру
+func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
+
+	slog.Info("Запуск воркера", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+
+	//создадим тикер который каждые 5 секунд будет срабатывать
+	ticker := time.NewTicker(5 * time.Second)
+	defer func() {
+		ticker.Stop()
+		slog.Info("Таймер для получения данных options остановлен", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+	}()
+
+	for {
+		select {
+		//если тикер дал тик
+		case <-ticker.C:
+
+			// slog.Warn("Сработал тикер", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+
+			//для каждого символа - через индекс потому что внутри мьютексы
+			for i := range exchange.Symbols {
+
+				//если для символа стоит отметка получать категорию опционы
+				if slices.Contains(exchange.Symbols[i].Categories, "option") {
+					optionsData, err := exchange.Client.GetOptions(exchange.Symbols[i].Symbol)
+					if err != nil {
+						slog.Error("Ошибка при получении данных по опционам", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
+					}
+
+					//заглушка
+					_ = optionsData
+				}
+			}
+
+		case <-ctx.Done():
+			// Завершаем работу функции по контексту - все defer отрабатают автоматически
+			return
+		}
+	}
 }

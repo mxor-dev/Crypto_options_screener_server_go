@@ -180,3 +180,45 @@ type LastPriceResponse struct {
 	Symbol    string
 	LastPrice string
 }
+
+type OptionsData struct {
+	Symbol                    string
+	Series                    string
+	MinMarkIv                 string
+	NearestMarkIvToIndexPrice string
+	OptionsLines              [][]string
+	TimeToExpiry              string
+}
+
+type OptionsLines struct {
+	strikes []string
+
+	Cmark []string
+	Pmark []string
+	Cask  []string
+	Pask  []string
+	Cbid  []string
+	Pbid  []string
+
+	Cdelta []string
+	Pdelta []string
+	Cgamma []string
+	Pgamma []string
+	Cvega  []string
+	Pvega  []string
+	Ctheta []string
+	Ptheta []string
+
+	Coi   []string
+	Poi   []string
+	Ctv   []string
+	Ptv   []string
+	Cv24h []string
+	Pv24h []string
+
+	CaskIv []string
+	PaskIv []string
+	CbidIv []string
+	PbidIv []string
+	MarkIv []string
+}

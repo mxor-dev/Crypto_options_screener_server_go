@@ -3,6 +3,7 @@ package bybit
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -244,7 +245,7 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	//выполним запрос
 	respSpot, err := http.Get(url)
 	if err != nil {
-		return shared.KlineData{}, fmt.Errorf("Сетевая ошибка: %w", err)
+		return shared.KlineData{}, fmt.Errorf("Ошбика Get запроса %s: %w", url, err)
 	}
 	defer respSpot.Body.Close()
 
@@ -298,6 +299,84 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	} else {
 		slog.Warn("Данные kline отсутствуют", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "data", data)
 	}
+
+	return result, nil
+}
+
+// получает данные по опционам
+func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
+
+	result := shared.OptionsData{
+		Symbol:                    symbol,
+		Series:                    "",
+		MinMarkIv:                 "",
+		NearestMarkIvToIndexPrice: "",
+		OptionsLines:              [][]string{},
+		TimeToExpiry:              "",
+	}
+
+	//сформируем строку запроса для линейных инструментов
+	url := fmt.Sprintf("%s/v5/market/tickers?baseCoin=%s&category=%s", baseEndPont, symbol, "option")
+
+	//выполним запрос
+	respOptions, err := http.Get(url)
+	if err != nil {
+		return shared.OptionsData{}, fmt.Errorf("Ошбика Get запроса %s: %w", url, err)
+	}
+	defer respOptions.Body.Close()
+
+	//структура каждого опциона
+	type OptionItem struct {
+		Symbol                 string `json:"symbol"`
+		Bid1Price              string `json:"bid1Price"`
+		Bid1Size               string `json:"bid1Size"`
+		Bid1Iv                 string `json:"bid1Iv"`
+		Ask1Price              string `json:"ask1Price"`
+		Ask1Size               string `json:"ask1Size"`
+		Ask1Iv                 string `json:"ask1Iv"`
+		LastPrice              string `json:"lastPrice"`
+		HighPrice24h           string `json:"highPrice24h"`
+		LowPrice24h            string `json:"lowPrice24h"`
+		MarkPrice              string `json:"markPrice"`
+		IndexPrice             string `json:"indexPrice"`
+		MarkIv                 string `json:"markIv"`
+		UnderlyingPrice        string `json:"underlyingPrice"`
+		OpenInterest           string `json:"openInterest"`
+		Turnover24h            string `json:"turnover24h"`
+		Volume24h              string `json:"volume24h"`
+		TotalVolume            string `json:"totalVolume"`
+		TotalTurnover          string `json:"totalTurnover"`
+		Delta                  string `json:"delta"`
+		Gamma                  string `json:"gamma"`
+		Vega                   string `json:"vega"`
+		Theta                  string `json:"theta"`
+		PredictedDeliveryPrice string `json:"predictedDeliveryPrice"`
+		Change24h              string `json:"change24h"`
+	}
+
+	//короткая структура для ответа
+	type OptionsResponse struct {
+		Result struct {
+			List []OptionItem `json:"list"`
+		} `json:"result"`
+	}
+
+	//вычитываем все сырые байты из тела ответа
+	bodyBytes, err := io.ReadAll(respOptions.Body)
+	if err != nil {
+		return shared.OptionsData{}, fmt.Errorf("Ошибка чтения тела ответа %s: %w", url, err)
+	}
+
+	//экземпляр структуры
+	var rawOptionsData OptionsResponse
+
+	//распаковываем JSON-байты в созданный объект Go (передаем по указателю &)
+	err = json.Unmarshal(bodyBytes, &rawOptionsData)
+	if err != nil {
+		return shared.OptionsData{}, fmt.Errorf("Ошибка парсинга JSON опционов: %w", err)
+	}
+
+	slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "rawOptionsData", rawOptionsData)
 
 	return result, nil
 }

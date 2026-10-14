@@ -107,22 +107,22 @@ func main() {
 			IsActive: true,
 			Name:     "bybit",
 			Symbols: []shared.Symbols{
-				{Symbol: "BTC", Categories: []string{"linear", "options"}},
-				{Symbol: "SPCX", Categories: []string{"linear", "options"}},
-				// {Symbol: "ETH", Categories: []string{"linear", "options"}},
-				// {Symbol: "SOL", Categories: []string{"linear", "options"}},
-				// {Symbol: "DOGE", Categories: []string{"linear", "options"}},
-				// {Symbol: "XRP", Categories: []string{"linear", "options"}},
-				// {Symbol: "MNT", Categories: []string{"linear", "options"}},
-				// {Symbol: "XAUT", Categories: []string{"linear", "options"}},
-				// {Symbol: "HYPE", Categories: []string{"linear", "options"}},
-				{Symbol: "NVDA", Categories: []string{"linear", "options"}},
-				// {Symbol: "SNDK", Categories: []string{"linear", "options"}},
-				// {Symbol: "QQQ", Categories: []string{"linear", "options"}},
-				// {Symbol: "SKHY", Categories: []string{"linear", "options"}},
-				// {Symbol: "MU", Categories: []string{"linear", "options"}},
-				// {Symbol: "TSLA", Categories: []string{"linear", "options"}},
-				// {Symbol: "SOXL", Categories: []string{"linear", "options"}},
+				{Symbol: "BTC", Categories: []string{"linear", "option"}},
+				{Symbol: "SPCX", Categories: []string{"linear", "option"}},
+				// {Symbol: "ETH", Categories: []string{"linear", "option"}},
+				// {Symbol: "SOL", Categories: []string{"linear", "option"}},
+				// {Symbol: "DOGE", Categories: []string{"linear", "option"}},
+				// {Symbol: "XRP", Categories: []string{"linear", "option"}},
+				// {Symbol: "MNT", Categories: []string{"linear", "option"}},
+				// {Symbol: "XAUT", Categories: []string{"linear", "option"}},
+				// {Symbol: "HYPE", Categories: []string{"linear", "option"}},
+				{Symbol: "NVDA", Categories: []string{"linear", "option"}},
+				// {Symbol: "SNDK", Categories: []string{"linear", "option"}},
+				// {Symbol: "QQQ", Categories: []string{"linear", "option"}},
+				// {Symbol: "SKHY", Categories: []string{"linear", "option"}},
+				// {Symbol: "MU", Categories: []string{"linear", "option"}},
+				// {Symbol: "TSLA", Categories: []string{"linear", "optios"}},
+				// {Symbol: "SOXL", Categories: []string{"linear", "option"}},
 			},
 			Intervals: shared.Intervals{
 				RestDataGetInterval:    200 * time.Millisecond,
@@ -175,7 +175,10 @@ func main() {
 				go workers.GetKlineDataTimer(ctx, pool, &exchange)
 
 				//запускаем воркера для получения последних свечей
-				workers.GetKlineCandleLast(ctx, pool, &exchange, "linear")
+				go workers.GetKlineCandleLast(ctx, pool, &exchange, "linear")
+
+				//запускаем воркера для получения данных по опционам по таймеру
+				go workers.GetOptionsDataTimer(ctx, pool, &exchange)
 
 				//имитация работы
 				select {}
