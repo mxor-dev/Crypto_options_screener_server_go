@@ -1,4 +1,4 @@
-package exchange_client
+package shared
 
 import (
 	"net/http"
@@ -14,37 +14,6 @@ type Client interface {
 	WsConnect(streamType string) (*websocket.Conn, *http.Response, error)
 	WsDecodePong(message []byte) (bool, error)
 	WsDecodeLinearLastPrice(message []byte) (LastPriceResponse, error)
-}
 
-type SymbolInfo struct {
-	ExchangeName string
-	Symbol       string
-
-	SpotMinOrderQty    string
-	SpotTickSize       string
-	SpotPricePrecision string
-
-	LinearMinOrderQty    string
-	LinearTickSize       string
-	LinearPricePrecision string
-
-	OptionMinOrderQty    string
-	OptionTickSize       string
-	OptionPricePrecision string
-}
-
-type KlineData struct {
-	ExchangeName string
-	Symbol       string
-
-	Category      string
-	KlineInterval string
-
-	KlineData [][]string
-	Time      int64
-}
-
-type LastPriceResponse struct {
-	Symbol    string
-	LastPrice string
+	FormTopic(streamType string, args []string) (string, error) //формирует топики в соответствии с внутренними названиями биржи
 }

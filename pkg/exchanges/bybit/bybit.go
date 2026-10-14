@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 
 	"crypto_options_screener/pkg/convert"
-	"crypto_options_screener/pkg/exchanges/exchange_client"
+	"crypto_options_screener/pkg/shared"
 
 	"github.com/gorilla/websocket"
 )
@@ -39,12 +40,12 @@ func (b *BybitClient) GetExchangeName() string {
 }
 
 // получает информацию по всем символам
-func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, error) {
+func (b *BybitClient) GetSymbolInfo(symbol string) (shared.SymbolInfo, error) {
 
 	// slog.Info("Запрос данных SymbolInfo", "fun", "GetSymbolInfo", "ExchangeName", b.ExchangeName, "symbol", symbol)
 
 	//ответ
-	result := exchange_client.SymbolInfo{
+	result := shared.SymbolInfo{
 		ExchangeName: b.ExchangeName,
 		Symbol:       symbol,
 
@@ -69,7 +70,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 	//выполним запрос
 	respSpot, err := http.Get(urlSpot)
 	if err != nil {
-		return exchange_client.SymbolInfo{}, fmt.Errorf("Сетевая ошибка: %w", err)
+		return shared.SymbolInfo{}, fmt.Errorf("Сетевая ошибка: %w", err)
 	}
 	defer respSpot.Body.Close()
 
@@ -93,7 +94,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 
 	// Парсим данные в формате JSON
 	if err := json.NewDecoder(respSpot.Body).Decode(&dataSpot); err != nil {
-		return exchange_client.SymbolInfo{}, fmt.Errorf("Ошибка парсинга: %w", err)
+		return shared.SymbolInfo{}, fmt.Errorf("Ошибка парсинга: %w", err)
 	}
 
 	//если есть данные по споту
@@ -117,7 +118,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 	//выполним запрос
 	respLinear, err := http.Get(urlLinear)
 	if err != nil {
-		return exchange_client.SymbolInfo{}, fmt.Errorf("Сетевая ошибка: %w", err)
+		return shared.SymbolInfo{}, fmt.Errorf("Сетевая ошибка: %w", err)
 	}
 	defer respLinear.Body.Close()
 
@@ -141,7 +142,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 
 	// Парсим данные в формате JSON
 	if err := json.NewDecoder(respLinear.Body).Decode(&dataLinear); err != nil {
-		return exchange_client.SymbolInfo{}, fmt.Errorf("Ошибка парсинга: %w", err)
+		return shared.SymbolInfo{}, fmt.Errorf("Ошибка парсинга: %w", err)
 	}
 
 	// fmt.Printf("dataLinear:\n%+v\n", dataLinear)
@@ -165,7 +166,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 
 	respOptions, err := http.Get(urlOptions)
 	if err != nil {
-		return exchange_client.SymbolInfo{}, fmt.Errorf("Сетевая ошибка: %w", err)
+		return shared.SymbolInfo{}, fmt.Errorf("Сетевая ошибка: %w", err)
 	}
 	defer respOptions.Body.Close()
 
@@ -189,7 +190,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 
 	// Парсим данные в формате JSON
 	if err := json.NewDecoder(respOptions.Body).Decode(&dataOption); err != nil {
-		return exchange_client.SymbolInfo{}, fmt.Errorf("Ошибка парсинга: %w", err)
+		return shared.SymbolInfo{}, fmt.Errorf("Ошибка парсинга: %w", err)
 	}
 
 	// fmt.Printf("dataOption:\n%+v\n", dataOption)
@@ -210,11 +211,11 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 }
 
 // получает данные kline
-func (b *BybitClient) GetKline(symbol string, category string, klineInterval string, limit string) (exchange_client.KlineData, error) {
+func (b *BybitClient) GetKline(symbol string, category string, klineInterval string, limit string) (shared.KlineData, error) {
 
 	// slog.Info("Запрос данных kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval)
 
-	result := exchange_client.KlineData{
+	result := shared.KlineData{
 		ExchangeName: b.ExchangeName,
 		Symbol:       symbol,
 
@@ -243,7 +244,7 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	//выполним запрос
 	respSpot, err := http.Get(url)
 	if err != nil {
-		return exchange_client.KlineData{}, fmt.Errorf("Сетевая ошибка: %w", err)
+		return shared.KlineData{}, fmt.Errorf("Сетевая ошибка: %w", err)
 	}
 	defer respSpot.Body.Close()
 
@@ -260,15 +261,36 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 
 	// Парсим данные в формате JSON
 	if err := json.NewDecoder(respSpot.Body).Decode(&data); err != nil {
-		return exchange_client.KlineData{}, fmt.Errorf("Ошибка парсинга: %w", err)
+		return shared.KlineData{}, fmt.Errorf("Ошибка парсинга: %w", err)
 	}
 
 	// fmt.Printf("Получены данные: \n%+v\n", data)
 
 	//если есть данные
 	if len(data.Result.List) > 0 {
+
+		//массив формата TOHLC
+		var TOHLC [][]string
+
+		//для каждой свечки
+		for _, candle := range data.Result.List {
+			//переместим строку первые пять значений
+			TOHLC = append(
+				TOHLC,
+				[]string{
+					candle[0],
+					candle[1],
+					candle[2],
+					candle[3],
+					candle[4],
+				})
+		}
+
+		//поменяем порядок свечей
+		slices.Reverse(TOHLC)
+
 		//запишем полученные поля в result
-		result.KlineData = data.Result.List
+		result.KlineData = TOHLC
 		result.Time = convert.GetRoundedUTCTimeMs()
 
 		slog.Info("Получены данные kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "len(result.KlineData)", len(result.KlineData))
@@ -323,7 +345,7 @@ func (b *BybitClient) WsDecodePong(message []byte) (bool, error) {
 }
 
 // вытаскивает из сообщения знгачение lastPrice
-func (b *BybitClient) WsDecodeLinearLastPrice(message []byte) (exchange_client.LastPriceResponse, error) {
+func (b *BybitClient) WsDecodeLinearLastPrice(message []byte) (shared.LastPriceResponse, error) {
 
 	// краткая структура
 	type Response struct {
@@ -339,14 +361,27 @@ func (b *BybitClient) WsDecodeLinearLastPrice(message []byte) (exchange_client.L
 
 	//десериализуем JSON и в случае ошибки возвращаем её
 	if err := json.Unmarshal(message, &resp); err != nil {
-		return exchange_client.LastPriceResponse{}, err
+		return shared.LastPriceResponse{}, err
 	}
 
 	//результат работы
-	result := exchange_client.LastPriceResponse{
+	result := shared.LastPriceResponse{
 		Symbol:    resp.Data.Symbol,
 		LastPrice: resp.Data.LastPrice,
 	}
 
 	return result, nil
+}
+
+// формирует топик для потока и аргументов
+func (b *BybitClient) FormTopic(streamType string, args []string) (string, error) {
+
+	//в зависимости от типа потока
+	switch streamType {
+	case "tickers":
+		return fmt.Sprintf("tickers.%sUSDT", args[0]), nil
+	default:
+		return "", fmt.Errorf("Неизвестный streamType: %s", streamType)
+	}
+
 }

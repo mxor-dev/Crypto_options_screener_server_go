@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"crypto_options_screener/pkg/exchanges/bybit"
-	"crypto_options_screener/pkg/shared"
+	shared "crypto_options_screener/pkg/types"
 	"crypto_options_screener/pkg/workers"
 
 	"github.com/gin-gonic/gin"
@@ -107,22 +107,22 @@ func main() {
 			IsActive: true,
 			Name:     "bybit",
 			Symbols: []shared.Symbols{
-				{Symbol: "BTC", DataToGet: []string{"linear", "options"}},
-				{Symbol: "SPCX", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "ETH", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "SOL", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "DOGE", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "XRP", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "MNT", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "XAUT", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "HYPE", DataToGet: []string{"linear", "options"}},
-				{Symbol: "NVDA", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "SNDK", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "QQQ", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "SKHY", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "MU", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "TSLA", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "SOXL", DataToGet: []string{"linear", "options"}},
+				{Symbol: "BTC", Categories: []string{"linear", "options"}},
+				{Symbol: "SPCX", Categories: []string{"linear", "options"}},
+				// {Symbol: "ETH", Categories: []string{"linear", "options"}},
+				// {Symbol: "SOL", Categories: []string{"linear", "options"}},
+				// {Symbol: "DOGE", Categories: []string{"linear", "options"}},
+				// {Symbol: "XRP", Categories: []string{"linear", "options"}},
+				// {Symbol: "MNT", Categories: []string{"linear", "options"}},
+				// {Symbol: "XAUT", Categories: []string{"linear", "options"}},
+				// {Symbol: "HYPE", Categories: []string{"linear", "options"}},
+				{Symbol: "NVDA", Categories: []string{"linear", "options"}},
+				// {Symbol: "SNDK", Categories: []string{"linear", "options"}},
+				// {Symbol: "QQQ", Categories: []string{"linear", "options"}},
+				// {Symbol: "SKHY", Categories: []string{"linear", "options"}},
+				// {Symbol: "MU", Categories: []string{"linear", "options"}},
+				// {Symbol: "TSLA", Categories: []string{"linear", "options"}},
+				// {Symbol: "SOXL", Categories: []string{"linear", "options"}},
 			},
 			Intervals: shared.Intervals{
 				RestDataGetInterval:    200 * time.Millisecond,
@@ -166,10 +166,10 @@ func main() {
 				workers.GetAllSymbolsInfo(pool, exchange)
 
 				//получаем данные kline spot для всех монет, всех интервалов и сохраним в бд
-				workers.GetKlineDataInitial(pool, exchange, allKlineIntervals, "spot")
+				workers.GetKlineDataInitial(pool, exchange, &allKlineIntervals, "spot")
 
 				//получаем данные kline linear для всех монет, всех интервалов и сохраним в бд
-				workers.GetKlineDataInitial(pool, exchange, allKlineIntervals, "linear")
+				workers.GetKlineDataInitial(pool, exchange, &allKlineIntervals, "linear")
 
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
 				go workers.GetKlineDataTimer(ctx, pool, exchange)

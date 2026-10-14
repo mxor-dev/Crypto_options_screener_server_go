@@ -3,12 +3,10 @@ package workers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"slices"
 	"time"
 
-	"crypto_options_screener/pkg/exchanges/exchange_client"
 	"crypto_options_screener/pkg/shared"
 
 	"github.com/gorilla/websocket"
@@ -18,7 +16,7 @@ import (
 //------- СОХРАНЕНИЕ ДАННЫХ БД
 
 // сохраняет данные kline в бд
-func SaveKlineToDb(pool *pgxpool.Pool, klineData exchange_client.KlineData) {
+func SaveKlineToDb(pool *pgxpool.Pool, klineData *shared.KlineData) {
 
 	// Переводим двумерный массив [][]string в JSON-строку
 	jsonData, err := json.Marshal(klineData.KlineData)
@@ -62,54 +60,57 @@ func SaveKlineToDb(pool *pgxpool.Pool, klineData exchange_client.KlineData) {
 //------- ПОЛУЧЕНИЕ ДАННЫХ С БИРЖ
 
 // получает данные по всем монеткам для конкретной биржи и сохраняеет ее в БД
-func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange shared.Exchange) {
+func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
 
 	//для каждого символа для текущей биржи
-	for _, symbol := range exchange.Symbols {
+	for i := range exchange.Symbols {
 
 		//получим данные для текущей монетки
-		symbolInfo, err := exchange.Client.GetSymbolInfo(symbol.Symbol)
+		symbolInfo, err := exchange.Client.GetSymbolInfo(exchange.Symbols[i].Symbol)
 		if err != nil {
-			slog.Error("Ошибка при получении", "func", "GetAllSymbolsInfo", "exchangeName", exchange.Name, "symbol", symbol.Symbol)
+			slog.Error("Ошибка при получении", "func", "GetAllSymbolsInfo", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol)
 		}
 
-		slog.Info("Получены данные SymbolInfo", "exchangeName", exchange.Name, "symbol", symbol.Symbol, "symbolInfo", symbolInfo)
+		slog.Info("Получены данные SymbolInfo", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "symbolInfo", symbolInfo)
+
+		//запишем данные в общую структуру
+		exchange.Symbols[i].Info.SaveInfo(symbolInfo)
 
 		//запишем данные в бд
-		query := `
-			INSERT INTO all_symbols_info_new (
-				exchange_name, symbol, 
-				spot_min_order_qty, spot_tick_size, 
-				linear_min_order_qty, linear_tick_size, 
-				option_min_order_qty, option_tick_size
-			) 
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-			ON CONFLICT (exchange_name, symbol) 
-			DO UPDATE SET 
-				spot_min_order_qty = EXCLUDED.spot_min_order_qty,
-				spot_tick_size = EXCLUDED.spot_tick_size,
-				linear_min_order_qty = EXCLUDED.linear_min_order_qty,
-				linear_tick_size = EXCLUDED.linear_tick_size,
-				option_min_order_qty = EXCLUDED.option_min_order_qty,
-				option_tick_size = EXCLUDED.option_tick_size;
-		`
+		// query := `
+		// 	INSERT INTO all_symbols_info_new (
+		// 		exchange_name, symbol,
+		// 		spot_min_order_qty, spot_tick_size,
+		// 		linear_min_order_qty, linear_tick_size,
+		// 		option_min_order_qty, option_tick_size
+		// 	)
+		// 	VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		// 	ON CONFLICT (exchange_name, symbol)
+		// 	DO UPDATE SET
+		// 		spot_min_order_qty = EXCLUDED.spot_min_order_qty,
+		// 		spot_tick_size = EXCLUDED.spot_tick_size,
+		// 		linear_min_order_qty = EXCLUDED.linear_min_order_qty,
+		// 		linear_tick_size = EXCLUDED.linear_tick_size,
+		// 		option_min_order_qty = EXCLUDED.option_min_order_qty,
+		// 		option_tick_size = EXCLUDED.option_tick_size;
+		// `
 
-		// 2. Безопасное выполнение запроса через пул соединений
-		_, err = pool.Exec(
-			context.Background(),
-			query,
-			symbolInfo.ExchangeName,
-			symbolInfo.Symbol,
-			symbolInfo.SpotMinOrderQty,
-			symbolInfo.SpotTickSize,
-			symbolInfo.LinearMinOrderQty,
-			symbolInfo.LinearTickSize,
-			symbolInfo.OptionMinOrderQty,
-			symbolInfo.OptionTickSize,
-		)
-		if err != nil {
-			slog.Error("Ошибка при сохранении данных в БД", "func", "GetAllSymbolsInfo", "exchangeName", exchange.Name, "symbol", symbol.Symbol)
-		}
+		// // 2. Безопасное выполнение запроса через пул соединений
+		// _, err = pool.Exec(
+		// 	context.Background(),
+		// 	query,
+		// 	symbolInfo.ExchangeName,
+		// 	symbolInfo.Symbol,
+		// 	symbolInfo.SpotMinOrderQty,
+		// 	symbolInfo.SpotTickSize,
+		// 	symbolInfo.LinearMinOrderQty,
+		// 	symbolInfo.LinearTickSize,
+		// 	symbolInfo.OptionMinOrderQty,
+		// 	symbolInfo.OptionTickSize,
+		// )
+		// if err != nil {
+		// 	slog.Error("Ошибка при сохранении данных в БД", "func", "GetAllSymbolsInfo", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol)
+		// }
 
 		//сделаем паузу между запросами
 		time.Sleep(exchange.Intervals.RestDataGetInterval)
@@ -117,23 +118,45 @@ func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange shared.Exchange) {
 }
 
 // получает разово данные kline для всех монет и всех интервалов и сохранеет их в БД
-func GetKlineDataInitial(pool *pgxpool.Pool, exchange shared.Exchange, allKlineIntervals []string, category string) {
+func GetKlineDataInitial(pool *pgxpool.Pool, exchange *shared.Exchange, allKlineIntervals *[]string, category string) {
 
 	//для каждого символа для текущей биржи
-	for _, symbol := range exchange.Symbols {
+	for i := range exchange.Symbols {
 
-		//для каждого интервала
-		for _, interval := range allKlineIntervals {
+		//если для символа есть отметка получении данных текущей категории
+		if slices.Contains(exchange.Symbols[i].Categories, category) {
+			//для каждого интервала
+			for _, interval := range *allKlineIntervals {
 
-			//получим данные
-			klineData, err := exchange.Client.GetKline(symbol.Symbol, category, interval, "1000")
-			if err != nil {
-				slog.Error("Ошибка при получении kline spot", "fun", "GetKlineDataInitial", "exchangeName", exchange.Name, "symbol", symbol.Symbol, "err", err)
+				//получим данные
+				klineData, err := exchange.Client.GetKline(exchange.Symbols[i].Symbol, category, interval, "1000")
+				if err != nil {
+					slog.Error("Ошибка при получении kline spot", "fun", "GetKlineDataInitial", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
+				}
+
+				//в зависимости от категории
+				switch category {
+				case "spot":
+
+					//запишем данные kline
+					exchange.Symbols[i].KlineSpot.SaveKlineData(klineData)
+
+					//запишем последнюю свечку
+					exchange.Symbols[i].LastCandleSpot.SaveKlineLastCandle(klineData.KlineData[len(klineData.KlineData)-1])
+
+				case "linear":
+					//запишем данные kline
+					exchange.Symbols[i].KlineLinear.SaveKlineData(klineData)
+
+					//запишем последнюю свечку
+					exchange.Symbols[i].LastCandleLinear.SaveKlineLastCandle(klineData.KlineData[len(klineData.KlineData)-1])
+
+				}
+
+				//сохранение данных в бд
+				SaveKlineToDb(pool, &klineData)
+
 			}
-
-			//сохранение данных в бд
-			SaveKlineToDb(pool, klineData)
-
 		}
 
 		//сделаем паузу между запросами
@@ -142,7 +165,7 @@ func GetKlineDataInitial(pool *pgxpool.Pool, exchange shared.Exchange, allKlineI
 }
 
 // получает данные с определенным интервалом и записывает их в бд
-func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange shared.Exchange) {
+func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
 	slog.Info("Запуск воркера", "func", "GetKlineDataTimer", "exchangeName", exchange.Name)
 
@@ -178,38 +201,50 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange shared.
 			if (minutes == 0 || minutes == 15 || minutes == 30 || minutes == 45) && seconds == 10 {
 
 				//для каждого символа для текущей биржи
-				for _, symbol := range exchange.Symbols {
+				for i := range exchange.Symbols {
 
 					//для каждого интервала
 					for _, interval := range []string{"15m"} {
 
 						//если для символа стоит отметка получать данные spot
-						if slices.Contains(symbol.DataToGet, "spot") {
+						if slices.Contains(exchange.Symbols[i].Categories, "spot") {
 
 							//получим данные
-							klineData, err := exchange.Client.GetKline(symbol.Symbol, "spot", interval, "1000")
+							klineData, err := exchange.Client.GetKline(exchange.Symbols[i].Symbol, "spot", interval, "1000")
 							if err != nil {
-								slog.Error("Ошибка при получении kline spot", "exchangeName", exchange.Name, "symbol", symbol.Symbol, "err", err)
+								slog.Error("Ошибка при получении kline spot", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
 							}
 
-							slog.Info("Получены данные kline", "func", "GetKlineDataInitial", "exchangeName", exchange.Name, "symbol", symbol.Symbol, "len(klineData.KlineData)", len(klineData.KlineData))
+							slog.Info("Получены данные kline", "func", "GetKlineDataInitial", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "len(klineData.KlineData)", len(klineData.KlineData))
+
+							//запишем данные в общую структуру биржи
+							exchange.Symbols[i].KlineSpot.SaveKlineData(klineData)
+
+							//запишем последнюю свечку
+							exchange.Symbols[i].LastCandleSpot.SaveKlineLastCandle(klineData.KlineData[len(klineData.KlineData)-1])
 
 							//сохранение данных в бд
-							SaveKlineToDb(pool, klineData)
+							SaveKlineToDb(pool, &klineData)
 						}
 
-						if slices.Contains(symbol.DataToGet, "linear") {
+						if slices.Contains(exchange.Symbols[i].Categories, "linear") {
 
 							//получим данные
-							klineData, err := exchange.Client.GetKline(symbol.Symbol, "linear", interval, "1000")
+							klineData, err := exchange.Client.GetKline(exchange.Symbols[i].Symbol, "linear", interval, "1000")
 							if err != nil {
-								slog.Error("Ошибка при получении kline linear", "exchangeName", exchange.Name, "symbol", symbol.Symbol, "err", err)
+								slog.Error("Ошибка при получении kline linear", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
 							}
 
-							slog.Info("Получены данные kline", "func", "GetKlineDataInitial", "exchangeName", exchange.Name, "symbol", symbol.Symbol, "len(klineData.KlineData)", len(klineData.KlineData))
+							slog.Info("Получены данные kline", "func", "GetKlineDataInitial", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "len(klineData.KlineData)", len(klineData.KlineData))
+
+							//запишем данные в общую структуру биржи
+							exchange.Symbols[i].KlineLinear.SaveKlineData(klineData)
+
+							//запишем последнюю свечку
+							exchange.Symbols[i].LastCandleLinear.SaveKlineLastCandle(klineData.KlineData[len(klineData.KlineData)-1])
 
 							//сохранение данных в бд
-							SaveKlineToDb(pool, klineData)
+							SaveKlineToDb(pool, &klineData)
 						}
 
 					}
@@ -223,38 +258,51 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange shared.
 			if minutes == 0 && seconds == 10 {
 
 				//для каждого символа для текущей биржи
-				for _, symbol := range exchange.Symbols {
+				for i := range exchange.Symbols {
 
 					//для каждого интервала
 					for _, interval := range []string{"1h", "1D", "1W"} {
 
 						//если для символа стоит отметка получать данные spot
-						if slices.Contains(symbol.DataToGet, "spot") {
+						if slices.Contains(exchange.Symbols[i].Categories, "spot") {
 
 							//получим данные
-							klineData, err := exchange.Client.GetKline(symbol.Symbol, "spot", interval, "1000")
+							klineData, err := exchange.Client.GetKline(exchange.Symbols[i].Symbol, "spot", interval, "1000")
+
 							if err != nil {
-								slog.Error("Ошибка при получении kline spot", "exchangeName", exchange.Name, "symbol", symbol.Symbol, "err", err)
+								slog.Error("Ошибка при получении kline spot", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
 							}
 
-							slog.Info("Получены данные kline", "func", "GetKlineDataInitial", "exchangeName", exchange.Name, "symbol", symbol.Symbol, "len(klineData.KlineData)", len(klineData.KlineData))
+							slog.Info("Получены данные kline", "func", "GetKlineDataInitial", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "len(klineData.KlineData)", len(klineData.KlineData))
+
+							//запишем данные в общую структуру биржи
+							exchange.Symbols[i].KlineSpot.SaveKlineData(klineData)
+
+							//запишем последнюю свечку
+							exchange.Symbols[i].LastCandleSpot.SaveKlineLastCandle(klineData.KlineData[len(klineData.KlineData)-1])
 
 							//сохранение данных в бд
-							SaveKlineToDb(pool, klineData)
+							SaveKlineToDb(pool, &klineData)
 						}
 
-						if slices.Contains(symbol.DataToGet, "linear") {
+						if slices.Contains(exchange.Symbols[i].Categories, "linear") {
 
 							//получим данные
-							klineData, err := exchange.Client.GetKline(symbol.Symbol, "linear", interval, "1000")
+							klineData, err := exchange.Client.GetKline(exchange.Symbols[i].Symbol, "linear", interval, "1000")
 							if err != nil {
-								slog.Error("Ошибка при получении kline linear", "exchangeName", exchange.Name, "symbol", symbol.Symbol, "err", err)
+								slog.Error("Ошибка при получении kline linear", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
 							}
 
-							slog.Info("Получены данные kline", "func", "GetKlineDataInitial", "exchangeName", exchange.Name, "symbol", symbol.Symbol, "len(klineData.KlineData)", len(klineData.KlineData))
+							slog.Info("Получены данные kline", "func", "GetKlineDataInitial", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "len(klineData.KlineData)", len(klineData.KlineData))
+
+							//запишем данные в общую структуру биржи
+							exchange.Symbols[i].KlineLinear.SaveKlineData(klineData)
+
+							//запишем последнюю свечку
+							exchange.Symbols[i].LastCandleLinear.SaveKlineLastCandle(klineData.KlineData[len(klineData.KlineData)-1])
 
 							//сохранение данных в бд
-							SaveKlineToDb(pool, klineData)
+							SaveKlineToDb(pool, &klineData)
 						}
 
 					}
@@ -271,20 +319,10 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange shared.
 			return
 		}
 	}
-
-	//массив для конвертации интервала
-	// intervalsTime := map[string]time.Time{
-	// // 	"5m":  5 * time.Minute,
-	// // 	"15m": 15 * time.Minute,
-	// // 	"1h":  1 * time.Hour,
-	// // 	"1D":  "D",
-	// // 	"1W":  "W",
-	// // }
-
 }
 
 // запускает воркера для получения данных с определенного канала
-func WsWorker(ctx context.Context, exchange shared.Exchange, streamType string, topicArr []string, dataChan chan []byte) {
+func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string, topicArr []string, dataChan chan []byte) {
 
 	//структура для подписки
 	type Request struct {
@@ -398,7 +436,7 @@ func WsWorker(ctx context.Context, exchange shared.Exchange, streamType string, 
 			slog.Info("Запущен таймер переподключение WebSocket", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType)
 
 			//таймер для переподключения
-			ticker := time.NewTicker(10 * time.Second)
+			ticker := time.NewTicker(20 * time.Second)
 
 			//метка для остановки for изнутри select
 		ReconnectLoop:
@@ -408,7 +446,7 @@ func WsWorker(ctx context.Context, exchange shared.Exchange, streamType string, 
 				//если тикер дал тик
 				case <-ticker.C:
 
-					slog.Info("Переподключение WebSocket", "func", "GetKlineCandleLast", "exchangeName", exchange.Name)
+					slog.Info("Переподключение WebSocket...", "func", "GetKlineCandleLast", "exchangeName", exchange.Name)
 
 					//переопределим подключение
 					conn, _, err = exchange.Client.WsConnect(streamType)
@@ -480,36 +518,37 @@ func WsWorker(ctx context.Context, exchange shared.Exchange, streamType string, 
 }
 
 // работает с вебсокетом в котором получает данные для формирования последней свечки и сохраняет эти данные
-func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange shared.Exchange, category string) {
-
-	//тип потока
-	var streamType string
-
-	//для данной конкретной функции
-	if category == "spot" {
-		// данные получаем по потоку spot
-		streamType = "spot"
-	} else if category == "linear" {
-		//данные получаем по потоку linear
-		streamType = "linear"
-	}
+func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange, category string) {
 
 	//список тем для подписки
 	var topicArr []string
 
 	//для каждого символа для текущей биржи
-	for _, symbol := range exchange.Symbols {
+	for i := range exchange.Symbols {
 
-		//если входящая категория spot и для символа стоит отметка получать данные spot
-		if category == "spot" && slices.Contains(symbol.DataToGet, "spot") {
+		//если для символа существует запиись получать данные из соответствующей категории
+		if slices.Contains(exchange.Symbols[i].Categories, category) {
+
+			******
+
+			//получим сформированный топик от клиента
+			topic, err := exchange.Client.FormTopic("tickers", []string{exchange.Symbols[i].Symbol})
+			if err != nil {
+				slog.Error("Ошибка при формировании топика", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "error", err)
+			}
 			//добавим элемент
-			topicArr = append(topicArr, fmt.Sprintf("tickers.%s", symbol.Symbol))
+			topicArr = append(topicArr, topic)
 		}
 
 		//если входящая категория linear и для символа стоит отметка получать данные linear
-		if category == "linear" && slices.Contains(symbol.DataToGet, "linear") {
+		if category == "linear" && slices.Contains(exchange.Symbols[i].Categories, "linear") {
+			//получим сформированный топик от клиента
+			topic, err := exchange.Client.FormTopic("tickers", []string{exchange.Symbols[i].Symbol})
+			if err != nil {
+				slog.Error("Ошибка при формировании топика", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "error", err)
+			}
 			//добавим элемент
-			topicArr = append(topicArr, fmt.Sprintf("tickers.%sUSDT", symbol.Symbol))
+			topicArr = append(topicArr, topic)
 		}
 	}
 
