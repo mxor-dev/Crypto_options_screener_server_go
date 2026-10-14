@@ -581,7 +581,32 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 
 			//если есть изменения по LastPrice
 			if data.LastPrice != "" {
-				slog.Debug("Получены данные lastPrice", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "Symbol", data.Symbol, "LastPrice", data.LastPrice)
+
+				slog.Debug("Получены данные lastPrice", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", data.Symbol, "LastPrice", data.LastPrice)
+
+				//получим последнюю цену по символу
+				for i := range exchange.Symbols {
+
+					//если это данные по текущему символу
+					if exchange.Symbols[i].Symbol+"USDT" == data.Symbol {
+
+						if streamType == "ws-spot-channel" {
+
+							//обновим свечку
+							exchange.Symbols[i].LastCandleSpot.UpdateKlineLastCandle(data.LastPrice)
+						}
+						if streamType == "ws-linear-channel" {
+
+							//обновим свечку
+							exchange.Symbols[i].LastCandleLinear.UpdateKlineLastCandle(data.LastPrice)
+
+							// slog.Warn("Обновленная lastCandle", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", data.Symbol, "streamType", streamType, "lastCandle", exchange.Symbols[i].LastCandleLinear.GetKlineLastCandle())
+
+						}
+
+						break
+					}
+				}
 			}
 
 		case <-ctx.Done():
