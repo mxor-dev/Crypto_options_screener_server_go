@@ -1,11 +1,19 @@
 package exchange_client
 
+import (
+	"net/http"
+
+	"github.com/gorilla/websocket"
+)
+
 type Client interface {
 	GetExchangeName() string
 	GetSymbolInfo(symbol string) (SymbolInfo, error)                                                //получает данные по симвоолу
 	GetKline(symbol string, category string, klineInterval string, limit string) (KlineData, error) // получает данные свечей по perpetual или споту
-	// GetLinear()                //данные по фьючерсам
-	// GetOptions()               //данные по опционам
+
+	WsConnect(streamType string) (*websocket.Conn, *http.Response, error)
+	WsDecodePong(message []byte) (bool, error)
+	WsDecodeLinearLastPrice(message []byte) (LastPriceResponse, error)
 }
 
 type SymbolInfo struct {
@@ -34,4 +42,9 @@ type KlineData struct {
 
 	KlineData [][]string
 	Time      int64
+}
+
+type LastPriceResponse struct {
+	Symbol    string
+	LastPrice string
 }

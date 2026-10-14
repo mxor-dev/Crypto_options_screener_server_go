@@ -116,7 +116,7 @@ func main() {
 				// {Symbol: "MNT", DataToGet: []string{"linear", "options"}},
 				// {Symbol: "XAUT", DataToGet: []string{"linear", "options"}},
 				// {Symbol: "HYPE", DataToGet: []string{"linear", "options"}},
-				// {Symbol: "NVDA", DataToGet: []string{"linear", "options"}},
+				{Symbol: "NVDA", DataToGet: []string{"linear", "options"}},
 				// {Symbol: "SNDK", DataToGet: []string{"linear", "options"}},
 				// {Symbol: "QQQ", DataToGet: []string{"linear", "options"}},
 				// {Symbol: "SKHY", DataToGet: []string{"linear", "options"}},
@@ -165,11 +165,18 @@ func main() {
 				//получим информацию для всех монет на бирже и сохраним в бд
 				workers.GetAllSymbolsInfo(pool, exchange)
 
-				//получаем данные kline для всех монет, всех интервалов и сохраним в бд
-				workers.GetKlineDataInitial(pool, exchange, allKlineIntervals)
+				//получаем данные kline spot для всех монет, всех интервалов и сохраним в бд
+				workers.GetKlineDataInitial(pool, exchange, allKlineIntervals, "spot")
 
-				//запускаем горутину воркера для получения данных kline по тикеру
+				//получаем данные kline linear для всех монет, всех интервалов и сохраним в бд
+				workers.GetKlineDataInitial(pool, exchange, allKlineIntervals, "linear")
+
+				//запускаем горутину воркера для получения обновления данных kline по таймеру
 				go workers.GetKlineDataTimer(ctx, pool, exchange)
+
+				//запускаем воркера для получения последних свечей
+				workers.GetKlineCandleLast(ctx, pool, exchange, "linear")
+
 				//имитация работы
 				select {}
 
@@ -231,7 +238,7 @@ func main() {
 	slog.Info("http-сервер отключен")
 
 	slog.Info("Ожидаем отключение фоновых задач...")
-	time.Sleep(5 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	slog.Info("Работа программы завершена")
 }

@@ -8,6 +8,8 @@ import (
 
 	"crypto_options_screener/pkg/convert"
 	"crypto_options_screener/pkg/exchanges/exchange_client"
+
+	"github.com/gorilla/websocket"
 )
 
 // базовая точка доступа
@@ -31,13 +33,15 @@ func New(apiKey, apiSecret string) *BybitClient {
 
 //------- МЕТОДЫ
 
+// получает ися биржи из клиента
 func (b *BybitClient) GetExchangeName() string {
 	return b.ExchangeName
 }
 
+// получает информацию по всем символам
 func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, error) {
 
-	slog.Info("Запрос GetSymbolInfo", "ExchangeName", b.ExchangeName, "symbol", symbol)
+	// slog.Info("Запрос данных SymbolInfo", "fun", "GetSymbolInfo", "ExchangeName", b.ExchangeName, "symbol", symbol)
 
 	//ответ
 	result := exchange_client.SymbolInfo{
@@ -102,7 +106,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 		result.SpotPricePrecision = convert.GetPrecisionFromString(result.SpotTickSize)
 
 	} else {
-		slog.Warn("Нет данных по споту", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataSpot", dataSpot)
+		slog.Warn("Нет данных по споту", "fun", "GetSymbolInfo", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataSpot", dataSpot)
 	}
 
 	//------ ФЬЮЧЕРСЫ
@@ -151,7 +155,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 		//найдем точность цены
 		result.LinearPricePrecision = convert.GetPrecisionFromString(result.LinearTickSize)
 	} else {
-		slog.Warn("Нет данных по фьючерсам", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataLinear", dataLinear)
+		slog.Warn("Нет данных по фьючерсам", "fun", "GetSymbolInfo", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataLinear", dataLinear)
 	}
 
 	//------ ОПЦТОНЫ
@@ -205,9 +209,10 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (exchange_client.SymbolInfo, 
 	return result, nil
 }
 
+// получает данные kline
 func (b *BybitClient) GetKline(symbol string, category string, klineInterval string, limit string) (exchange_client.KlineData, error) {
 
-	slog.Info("Запрос GetKline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval)
+	// slog.Info("Запрос данных kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval)
 
 	result := exchange_client.KlineData{
 		ExchangeName: b.ExchangeName,
@@ -265,8 +270,82 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 		//запишем полученные поля в result
 		result.KlineData = data.Result.List
 		result.Time = convert.GetRoundedUTCTimeMs()
+
+		slog.Info("Получены данные kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "len(result.KlineData)", len(result.KlineData))
+
 	} else {
-		slog.Warn("Данные kline отсутствуют", "ExchangeName", b.ExchangeName, "symbol", symbol, "data", data)
+		slog.Warn("Данные kline отсутствуют", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "data", data)
+	}
+
+	return result, nil
+}
+
+// создает подключение по вебсокету
+func (b *BybitClient) WsConnect(streamType string) (*websocket.Conn, *http.Response, error) {
+
+	var url string
+
+	//выберем url для подключения
+	if streamType == "spot" {
+		url = "wss://stream.bybit.com/v5/public/spot"
+	} else if streamType == "linear" {
+		url = "wss://stream.bybit.com/v5/public/linear"
+	}
+
+	//создаем подключение
+	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+
+	return conn, resp, err
+}
+
+// декодирует ответ понг сервера
+func (b *BybitClient) WsDecodePong(message []byte) (bool, error) {
+	// Краткая структура для извлечения только признаков pong
+	type PongResponse struct {
+		RetMsg string `json:"ret_msg"`
+		Op     string `json:"op"`
+	}
+
+	var resp PongResponse
+
+	// Десериализуем JSON. Если это рыночные данные другого формата,
+	// unmarshal может выдать ошибку или просто оставить поля пустыми.
+	if err := json.Unmarshal(message, &resp); err != nil {
+		return false, err
+	}
+
+	// Проверяем, совпадает ли хотя бы одно поле с признаком pong
+	if resp.RetMsg == "pong" {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// вытаскивает из сообщения знгачение lastPrice
+func (b *BybitClient) WsDecodeLinearLastPrice(message []byte) (exchange_client.LastPriceResponse, error) {
+
+	// краткая структура
+	type Response struct {
+		Topic string `json:"topic"`
+		Data  struct {
+			Symbol    string `json:"symbol"`
+			LastPrice string `json:"lastPrice"`
+		} `json:"data"`
+	}
+
+	//переменная структуры
+	var resp Response
+
+	//десериализуем JSON и в случае ошибки возвращаем её
+	if err := json.Unmarshal(message, &resp); err != nil {
+		return exchange_client.LastPriceResponse{}, err
+	}
+
+	//результат работы
+	result := exchange_client.LastPriceResponse{
+		Symbol:    resp.Data.Symbol,
+		LastPrice: resp.Data.LastPrice,
 	}
 
 	return result, nil
