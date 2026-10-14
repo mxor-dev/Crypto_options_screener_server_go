@@ -407,7 +407,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 		// закрываем соедиение
 		conn.Close()
 
-		slog.Info("Работа вспомогательной горутины завершена", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType)
+		slog.Info("Работа горутины закрывающей соеденение ws завершена", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType)
 	}()
 
 	//цикл чтения данных из вебсокета
@@ -424,7 +424,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 		if err != nil {
 			// Если контекст отменен — это штатное закрытие сокета, выходим без паники
 			if ctx.Err() != nil {
-				slog.Info("WebsocketLinear отключен по контексту", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
+				slog.Info("Websocket отключен по контексту", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
 				break
 			}
 
@@ -520,6 +520,9 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 // работает с вебсокетом в котором получает данные для формирования последней свечки и сохраняет эти данные
 func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange, category string) {
 
+	//тип потока
+	var streamType string
+
 	//список тем для подписки
 	var topicArr []string
 
@@ -527,12 +530,13 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 	for i := range exchange.Symbols {
 
 		//если для символа существует запиись получать данные из соответствующей категории
-		if slices.Contains(exchange.Symbols[i].Categories, category) {
+		if category == "spot" && slices.Contains(exchange.Symbols[i].Categories, "spot") {
 
-			******
+			//определим тип потока
+			streamType = "ws-spot-channel"
 
 			//получим сформированный топик от клиента
-			topic, err := exchange.Client.FormTopic("tickers", []string{exchange.Symbols[i].Symbol})
+			topic, err := exchange.Client.FormTopic(streamType, []string{exchange.Symbols[i].Symbol})
 			if err != nil {
 				slog.Error("Ошибка при формировании топика", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "error", err)
 			}
@@ -542,8 +546,12 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 
 		//если входящая категория linear и для символа стоит отметка получать данные linear
 		if category == "linear" && slices.Contains(exchange.Symbols[i].Categories, "linear") {
+
+			//определим тип потока
+			streamType = "ws-linear-channel"
+
 			//получим сформированный топик от клиента
-			topic, err := exchange.Client.FormTopic("tickers", []string{exchange.Symbols[i].Symbol})
+			topic, err := exchange.Client.FormTopic(streamType, []string{exchange.Symbols[i].Symbol})
 			if err != nil {
 				slog.Error("Ошибка при формировании топика", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "error", err)
 			}
@@ -577,7 +585,7 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 			}
 
 		case <-ctx.Done():
-			slog.Info("Внешний обработчик остановлен по контексту")
+			slog.Info("Внешний обработчик остановлен по контексту", "func", "GetKlineCandleLast", "exchangeName", exchange.Name)
 			return
 		}
 	}

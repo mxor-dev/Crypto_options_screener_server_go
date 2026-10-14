@@ -308,10 +308,13 @@ func (b *BybitClient) WsConnect(streamType string) (*websocket.Conn, *http.Respo
 	var url string
 
 	//выберем url для подключения
-	if streamType == "spot" {
+	switch streamType {
+	case "ws-spot-channel":
 		url = "wss://stream.bybit.com/v5/public/spot"
-	} else if streamType == "linear" {
+	case "ws-linear-channel":
 		url = "wss://stream.bybit.com/v5/public/linear"
+	default:
+		return nil, nil, fmt.Errorf("Неизвестный streamType: %s", streamType)
 	}
 
 	//создаем подключение
@@ -378,7 +381,9 @@ func (b *BybitClient) FormTopic(streamType string, args []string) (string, error
 
 	//в зависимости от типа потока
 	switch streamType {
-	case "tickers":
+	case "ws-spot-channel":
+		return fmt.Sprintf("tickers.%sUSDT", args[0]), nil
+	case "ws-linear-channel":
 		return fmt.Sprintf("tickers.%sUSDT", args[0]), nil
 	default:
 		return "", fmt.Errorf("Неизвестный streamType: %s", streamType)

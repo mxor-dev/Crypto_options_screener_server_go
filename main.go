@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"crypto_options_screener/pkg/exchanges/bybit"
-	shared "crypto_options_screener/pkg/types"
+	"crypto_options_screener/pkg/shared"
 	"crypto_options_screener/pkg/workers"
 
 	"github.com/gin-gonic/gin"
@@ -163,19 +163,19 @@ func main() {
 				}
 
 				//получим информацию для всех монет на бирже и сохраним в бд
-				workers.GetAllSymbolsInfo(pool, exchange)
+				workers.GetAllSymbolsInfo(pool, &exchange)
 
 				//получаем данные kline spot для всех монет, всех интервалов и сохраним в бд
-				workers.GetKlineDataInitial(pool, exchange, &allKlineIntervals, "spot")
+				workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "spot")
 
 				//получаем данные kline linear для всех монет, всех интервалов и сохраним в бд
-				workers.GetKlineDataInitial(pool, exchange, &allKlineIntervals, "linear")
+				workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "linear")
 
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
-				go workers.GetKlineDataTimer(ctx, pool, exchange)
+				go workers.GetKlineDataTimer(ctx, pool, &exchange)
 
 				//запускаем воркера для получения последних свечей
-				workers.GetKlineCandleLast(ctx, pool, exchange, "linear")
+				workers.GetKlineCandleLast(ctx, pool, &exchange, "linear")
 
 				//имитация работы
 				select {}
