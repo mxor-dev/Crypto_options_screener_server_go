@@ -660,7 +660,7 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 }
 
 // воркер раз в 10 сек показывает размер объекта
-func GetSizeTimer(ctx context.Context, exchange *shared.Exchange) {
+func GetMemStatsTimer(ctx context.Context, exchange *shared.Exchange) {
 
 	slog.Info("Запуск воркера", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
 

@@ -180,7 +180,7 @@ func main() {
 				//запускаем воркера для получения данных по опционам по таймеру
 				go workers.GetOptionsDataTimer(ctx, pool, &exchange)
 
-				go workers.GetSizeTimer(ctx, &exchange)
+				go workers.GetMemStatsTimer(ctx, &exchange)
 
 			}()
 		}
