@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 
 	"crypto_options_screener/pkg/convert"
 	"crypto_options_screener/pkg/shared"
@@ -311,7 +312,7 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 		Series:                    "",
 		MinMarkIv:                 "",
 		NearestMarkIvToIndexPrice: "",
-		OptionsLines:              [][]string{},
+		OptionsLines:              []shared.OptionsLines{},
 		TimeToExpiry:              "",
 	}
 
@@ -367,7 +368,7 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 		return shared.OptionsData{}, fmt.Errorf("Ошибка чтения тела ответа %s: %w", url, err)
 	}
 
-	//экземпляр структуры
+	//экземпляр структуры ответа
 	var rawOptionsData OptionsResponse
 
 	//распаковываем JSON-байты в созданный объект Go (передаем по указателю &)
@@ -376,7 +377,60 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 		return shared.OptionsData{}, fmt.Errorf("Ошибка парсинга JSON опционов: %w", err)
 	}
 
-	slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "rawOptionsData", rawOptionsData)
+	// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "rawOptionsData", rawOptionsData)
+
+	type CallsAndPuts struct {
+		Calls []OptionItem
+		Puts  []OptionItem
+	}
+	//структура для сортировки
+	allSeriesMap := make(map[string]CallsAndPuts)
+
+	//для каждого опциона
+	for i := range rawOptionsData.Result.List {
+
+		//разобъем Symbol на части
+		parts := strings.Split(rawOptionsData.Result.List[i].Symbol, "-")
+
+		//переменные
+		currSeries := parts[1]
+		optionType := parts[3]
+
+		//если серия опциона отсутствует
+		if _, ok := allSeriesMap[currSeries]; !ok {
+			//добавим серию
+			allSeriesMap[currSeries] = CallsAndPuts{
+				// Calls: []OptionItem{},
+				// Puts:  []OptionItem{},
+			}
+
+		}
+
+		// slog.Warn("Тип опциона", "ExchangeName", b.ExchangeName, "symbol", symbol, "parts[3]", parts[3])
+
+		//достанем текущую серию из map
+		currSeriesData := allSeriesMap[currSeries]
+
+		//проверим тип опциона
+		switch optionType {
+		case "C":
+			// slog.Warn("Добавлен Call")
+			//добавим опцион к Calls
+			currSeriesData.Calls = append(currSeriesData.Calls, rawOptionsData.Result.List[i])
+		case "P":
+			// slog.Warn("Добавлен Put")
+			//добавим опцион к Puts
+			currSeriesData.Puts = append(currSeriesData.Puts, rawOptionsData.Result.List[i])
+		}
+
+		//записываем обновленную серию обратно в map
+		allSeriesMap[currSeries] = currSeriesData
+
+		// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "currSeriesData", currSeriesData)
+
+	}
+
+	// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "allSeriesMap", allSeriesMap)
 
 	return result, nil
 }

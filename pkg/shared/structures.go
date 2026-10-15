@@ -186,7 +186,7 @@ type OptionsData struct {
 	Series                    string
 	MinMarkIv                 string
 	NearestMarkIvToIndexPrice string
-	OptionsLines              [][]string
+	OptionsLines              []OptionsLines
 	TimeToExpiry              string
 }
 
