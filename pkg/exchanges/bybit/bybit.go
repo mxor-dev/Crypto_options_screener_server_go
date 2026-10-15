@@ -252,6 +252,12 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	}
 	defer respSpot.Body.Close()
 
+	//читаем байты ответа в переменную
+	bodyBytes, err := io.ReadAll(respSpot.Body)
+	if err != nil {
+		return shared.KlineData{}, fmt.Errorf("Ошибка чтения ответа сервера %s: %w", url, err)
+	}
+
 	//краткая структура ответа
 	type Response struct {
 		Result struct {
@@ -264,44 +270,43 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	var data Response
 
 	// Парсим данные в формате JSON
-	if err := json.NewDecoder(respSpot.Body).Decode(&data); err != nil {
+	if err := json.Unmarshal(bodyBytes, &data); err != nil {
 		return shared.KlineData{}, fmt.Errorf("Ошибка парсинга: %w", err)
 	}
 
 	// fmt.Printf("Получены данные: \n%+v\n", data)
 
-	//если есть данные
-	if len(data.Result.List) > 0 {
-
-		//массив формата TOHLC
-		var TOHLC [][]string
-
-		//для каждой свечки
-		for _, candle := range data.Result.List {
-			//переместим строку первые пять значений
-			TOHLC = append(
-				TOHLC,
-				[]string{
-					candle[0],
-					candle[1],
-					candle[2],
-					candle[3],
-					candle[4],
-				})
-		}
-
-		//поменяем порядок свечей
-		slices.Reverse(TOHLC)
-
-		//запишем полученные поля в result
-		result.KlineData = TOHLC
-		result.Time = convert.GetRoundedUTCTimeMs()
-
-		slog.Info("Получены данные kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "len(result.KlineData)", len(result.KlineData))
-
-	} else {
-		slog.Warn("Данные kline отсутствуют", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "data", data)
+	//если массив свечей нулевой
+	if len(data.Result.List) == 0 {
+		// Завершаем работу функции и выдаем ошибку с полной строкой отсета
+		return shared.KlineData{}, fmt.Errorf("В ответе биржи отсутствуют свечи len(data.Result.List) == 0. Полный ответ сервера: %s", string(bodyBytes))
 	}
+
+	//массив формата TOHLC
+	var TOHLC [][]string
+
+	//для каждой свечки
+	for _, candle := range data.Result.List {
+		//переместим строку первые пять значений
+		TOHLC = append(
+			TOHLC,
+			[]string{
+				candle[0],
+				candle[1],
+				candle[2],
+				candle[3],
+				candle[4],
+			})
+	}
+
+	//поменяем порядок свечей
+	slices.Reverse(TOHLC)
+
+	//запишем полученные поля в result
+	result.KlineData = TOHLC
+	result.Time = convert.GetRoundedUTCTimeMs()
+
+	slog.Info("Получены данные kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "len(result.KlineData)", len(result.KlineData))
 
 	return result, nil
 }
