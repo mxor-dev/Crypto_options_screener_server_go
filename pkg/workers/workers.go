@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"runtime"
 	"slices"
 	"time"
 
@@ -173,7 +174,7 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 	ticker := time.NewTicker(1 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер для получения данных kline остановлен", "func", "GetKlineDataTimer", "exchangeName", exchange.Name)
+		slog.Info("Таймер остановлен", "func", "GetKlineDataTimer", "exchangeName", exchange.Name)
 	}()
 
 	//переменная для остановке
@@ -571,7 +572,7 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 		select {
 		case message := <-dataChan:
 
-			// slog.Debug("Получено сообщение от ws воркера", "string(message)", string(message))
+			slog.Debug("Получено сообщение от ws воркера", "string(message)", string(message))
 
 			//декодируем сообщение с помощью клиента
 			data, err := exchange.Client.WsDecodeLinearLastPrice(message)
@@ -582,7 +583,7 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 			//если есть изменения по LastPrice
 			if data.LastPrice != "" {
 
-				slog.Debug("Получены данные lastPrice", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", data.Symbol, "LastPrice", data.LastPrice)
+				// slog.Debug("Получены данные lastPrice", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", data.Symbol, "LastPrice", data.LastPrice)
 
 				//получим последнюю цену по символу
 				for i := range exchange.Symbols {
@@ -626,7 +627,7 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 	ticker := time.NewTicker(5 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер для получения данных options остановлен", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+		slog.Info("Таймер остановлен", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
 	}()
 
 	for {
@@ -646,10 +647,39 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 						slog.Error("Ошибка при получении данных по опционам", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
 					}
 
-					//заглушка
-					_ = optionsData
+					//передадим данне по опционам в общую структуру
+					exchange.Symbols[i].OptionsData = optionsData
 				}
 			}
+
+		case <-ctx.Done():
+			// Завершаем работу функции по контексту - все defer отрабатают автоматически
+			return
+		}
+	}
+}
+
+// воркер раз в 10 сек показывает размер объекта
+func GetSizeTimer(ctx context.Context, exchange *shared.Exchange) {
+
+	slog.Info("Запуск воркера", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+
+	//создадим тикер который каждые 10 секунд будет срабатывать
+	ticker := time.NewTicker(60 * time.Second)
+	defer func() {
+		ticker.Stop()
+		slog.Info("Таймер остановлен", "func", "GetSizeTimer", "exchangeName", exchange.Name)
+	}()
+
+	for {
+		select {
+		//если тикер дал тик
+		case <-ticker.C:
+
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+
+			slog.Warn("Метрики памяти", "func", "GetSizeTimer", "Alloc_MB", float64(m.Alloc)/1024/1024, "Sys_MB", float64(m.Sys)/1024/1024, "HeapObjects", m.HeapObjects)
 
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически

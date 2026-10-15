@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"slices"
 	"strconv"
@@ -306,16 +307,9 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 }
 
 // получает данные по опционам
-func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
+func (b *BybitClient) GetOptions(symbol string) ([]shared.OptionsData, error) {
 
-	result := shared.OptionsData{
-		Symbol:                    symbol,
-		Series:                    "",
-		MinMarkIv:                 "",
-		NearestMarkIvToIndexPrice: "",
-		OptionsLines:              []shared.OptionsLines{},
-		TimeToExpiry:              "",
-	}
+	result := []shared.OptionsData{}
 
 	//сформируем строку запроса для линейных инструментов
 	url := fmt.Sprintf("%s/v5/market/tickers?baseCoin=%s&category=%s", baseEndPont, symbol, "option")
@@ -323,7 +317,7 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 	//выполним запрос
 	respOptions, err := http.Get(url)
 	if err != nil {
-		return shared.OptionsData{}, fmt.Errorf("Ошбика Get запроса %s: %w", url, err)
+		return []shared.OptionsData{}, fmt.Errorf("Ошбика Get запроса %s: %w", url, err)
 	}
 	defer respOptions.Body.Close()
 
@@ -366,7 +360,7 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 	//вычитываем все сырые байты из тела ответа
 	bodyBytes, err := io.ReadAll(respOptions.Body)
 	if err != nil {
-		return shared.OptionsData{}, fmt.Errorf("Ошибка чтения тела ответа %s: %w", url, err)
+		return []shared.OptionsData{}, fmt.Errorf("Ошибка чтения тела ответа %s: %w", url, err)
 	}
 
 	//экземпляр структуры ответа
@@ -375,7 +369,7 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 	//распаковываем JSON-байты в созданный объект Go (передаем по указателю &)
 	err = json.Unmarshal(bodyBytes, &rawOptionsData)
 	if err != nil {
-		return shared.OptionsData{}, fmt.Errorf("Ошибка парсинга JSON опционов: %w", err)
+		return []shared.OptionsData{}, fmt.Errorf("Ошибка парсинга JSON опционов: %w", err)
 	}
 
 	// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "rawOptionsData", rawOptionsData)
@@ -453,7 +447,7 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 
 	// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "allSeriesMap", allSeriesMap)
 
-	//обходим полученные серии
+	//для каждой серии
 	for series, seriesData := range allSeriesMap {
 
 		//массив трайков
@@ -553,6 +547,9 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 			localOptionsLines.CaskIv[strikeIndex] = call.Data.Ask1Iv
 			localOptionsLines.CbidIv[strikeIndex] = call.Data.Bid1Iv
 
+			//передадим линию MarkIv
+			localOptionsLines.MarkIv[strikeIndex] = call.Data.MarkIv
+
 		}
 
 		//для каждого опциона put
@@ -590,10 +587,76 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 
 		}
 
-		// ****!!!!!!!!
-		slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "localOptionsLines", localOptionsLines)
+		// slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "localOptionsLines", localOptionsLines)
 
+		//минимум линии
+		var minMarkIvStr string
+
+		//если линия MarkIv не нулевая
+		if len(localOptionsLines.MarkIv) > 0 {
+
+			//первое значение макс float64
+			minMarkIv := math.MaxFloat64
+
+			// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "localOptionsLines.MarkIv", localOptionsLines.MarkIv)
+
+			for _, markIvStr := range localOptionsLines.MarkIv {
+
+				// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "markIvStr", markIvStr)
+
+				// Конвертируем строку в число (база 10, размер int)
+				num, err := strconv.ParseFloat(markIvStr, 64)
+				if err != nil {
+					// Если в массиве попалась не строка-число (например "abc"), возвращаем ошибку
+					return []shared.OptionsData{}, fmt.Errorf("Ошибка конвертации строки '%s' в число: %w", markIvStr, err)
+				}
+
+				// Если текущее число меньше сохраненного минимума, обновляем минимум
+				if num < minMarkIv {
+					//сохраним числовое значение
+					minMarkIv = num
+					//сохраним строковое значение
+					minMarkIvStr = markIvStr
+				}
+			}
+		}
+
+		//заполним данные для текущей серии опционов
+		localOptionsData := shared.OptionsData{
+			Symbol:       symbol,
+			Series:       series,
+			MinMarkIv:    minMarkIvStr,
+			OptionsLines: localOptionsLines,
+		}
+
+		//добавим полученные данные по серии в итоговый массив
+		result = append(result, localOptionsData)
 	}
+
+	//сортируем итоговый результат по полю series по возрастанию времени доставки
+	slices.SortFunc(result, func(a, b shared.OptionsData) int {
+		timeA, errA := convert.SeriesToDeliveryTimeMs(a.Series)
+		timeB, errB := convert.SeriesToDeliveryTimeMs(b.Series)
+
+		if errA != nil {
+			return -1
+		}
+		if errB != nil {
+			return 1
+		}
+
+		if timeA < timeB {
+			return -1
+		}
+		if timeA > timeB {
+			return 1
+		}
+
+		return 0
+	})
+
+	// slog.Warn("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "result", result)
+	slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "len(result)", len(result))
 
 	return result, nil
 }

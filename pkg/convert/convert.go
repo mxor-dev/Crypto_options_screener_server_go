@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -56,4 +57,53 @@ func GetRoundedUTCTimeMs() int64 {
 
 	// 4. Возвращаем Unix Timestamp в миллисекундах (int64)
 	return roundedTime.UnixMilli()
+}
+
+// получает время доставки из названия серии - series - строка в формате YYMONTHDD
+func SeriesToDeliveryTimeMs(series string) (int64, error) {
+
+	//проверка на длину строки
+	switch len(series) {
+	case 6:
+		//добавим в начало "0"
+		series = "0" + series
+	case 7:
+		//ничего не делаем, все ок
+	default:
+		return 0, fmt.Errorf("Длина серии отлична от 6 или 7: %s", series)
+	}
+
+	//какрта для перевоад месяцев
+	monthsMap := map[string]string{
+		"JAN": "01", "FEB": "02", "MAR": "03", "APR": "04", "MAY": "05", "JUN": "06",
+		"JUL": "07", "AUG": "08", "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12",
+	}
+
+	//выделим составляющие
+	expiryDay := series[0:2]
+	monthName := series[2:5]
+	expiryYear := "20" + series[5:7]
+
+	//получим месяц "число"
+	expiryMonth, exists := monthsMap[monthName]
+	if !exists {
+		return 0, fmt.Errorf("неизвестный месяц: %s", monthName)
+	}
+
+	// Собираем строку для парсинга
+	dateStr := fmt.Sprintf("%s-%s-%sT08:00:00Z", expiryYear, expiryMonth, expiryDay)
+
+	// В Go для парсинга используется эталонное время: "2006-01-02T15:04:05Z07:00"
+	layout := "2006-01-02T15:04:05Z"
+	t, err := time.Parse(layout, dateStr)
+	if err != nil {
+		return 0, fmt.Errorf("Ошибка парсинга даты: %w", err)
+	}
+
+	//получим время в милисекундах
+	deliveryTimeMs := t.UnixMilli()
+
+	// slog.Debug("Выполнена конвертация", "func", "SeriesToDeliveryTimeMs", "series", series, "deliveryTimeMs", deliveryTimeMs)
+
+	return deliveryTimeMs, nil
 }

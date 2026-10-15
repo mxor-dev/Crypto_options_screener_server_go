@@ -28,6 +28,8 @@ type Symbols struct {
 
 	LastCandleSpot   KlineLastCandleMu
 	LastCandleLinear KlineLastCandleMu
+
+	OptionsData []OptionsData
 }
 
 // интервалы запроса данных
@@ -182,12 +184,10 @@ type LastPriceResponse struct {
 }
 
 type OptionsData struct {
-	Symbol                    string
-	Series                    string
-	MinMarkIv                 string
-	NearestMarkIvToIndexPrice string
-	OptionsLines              []OptionsLines
-	TimeToExpiry              string
+	Symbol       string
+	Series       string
+	MinMarkIv    string
+	OptionsLines OptionsLines
 }
 
 type OptionsLines struct {
