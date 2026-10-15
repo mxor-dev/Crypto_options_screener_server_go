@@ -115,17 +115,17 @@ func (k *KlineLastCandleMu) UpdateKlineLastCandle(lastPrice string) {
 	//конвертикуем последнюю цену в число
 	lastPriceFloat, err := strconv.ParseFloat(lastPrice, 64)
 	if err != nil {
-		slog.Error("Ошибка конвертации строки во float64", "UpdateKlineLastCandle", "error", err)
+		slog.Error("Ошибка конвертации строки во float64", "func", "UpdateKlineLastCandle", "error", err)
 	}
 	//конвертикуем текйщий лоу в число
 	currHightFloat, err := strconv.ParseFloat(k.Hight, 64)
 	if err != nil {
-		slog.Error("Ошибка конвертации строки во float64", "UpdateKlineLastCandle", "error", err)
+		slog.Error("Ошибка конвертации строки во float64", "func", "UpdateKlineLastCandle", "error", err)
 	}
 	//конвертикуем текущий лоу в число
 	cyrrLowFloat, err := strconv.ParseFloat(k.Low, 64)
 	if err != nil {
-		slog.Error("Ошибка конвертации строки во float64", "UpdateKlineLastCandle", "error", err)
+		slog.Error("Ошибка конвертации строки во float64", "func", "UpdateKlineLastCandle", "error", err)
 	}
 
 	//если последняя цена больше текущего хай
@@ -147,6 +147,16 @@ func (k *KlineLastCandleMu) UpdateKlineLastCandle(lastPrice string) {
 
 	k.Unlock()
 
+}
+
+// функция для обновления свечи
+func (k *KlineLastCandleMu) GetKlineLastCandleClosePrice() string {
+
+	k.Lock()
+	result := k.Close
+	k.Unlock()
+
+	return result
 }
 
 type InfoMu struct {
@@ -221,4 +231,17 @@ type OptionsLines struct {
 	CbidIv []string
 	PbidIv []string
 	MarkIv []string
+}
+
+type SymbolData struct {
+	ExchangeName    string
+	Symbol          string
+	LastPriceSpot   string
+	LastPriceLinear string
+	LinearData      []LinearData
+	OptionsData     []OptionsData
+	TimeMs          string
+}
+
+type LinearData struct {
 }

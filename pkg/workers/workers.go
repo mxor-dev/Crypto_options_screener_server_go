@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"runtime"
 	"slices"
+	"strconv"
 	"time"
 
 	"crypto_options_screener/pkg/shared"
@@ -16,46 +17,68 @@ import (
 
 //------- СОХРАНЕНИЕ ДАННЫХ БД
 
-// сохраняет данные kline в бд
-func SaveKlineToDb(pool *pgxpool.Pool, klineData *shared.KlineData) {
+// сохраняет данные по опционам в бд
+func SaveSymbolDataToDb(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, optionsData *[]shared.OptionsData, timeMs int64) {
 
-	// Переводим двумерный массив [][]string в JSON-строку
-	jsonData, err := json.Marshal(klineData.KlineData)
-	if err != nil {
-		slog.Error("Ошибка при создании json из kline", "func", "SaveKlineToDb", "exchangeName", klineData.ExchangeName, "symbol", klineData.Symbol, "err", err)
+	//защита от nil в указателе
+	if optionsData == nil {
+		slog.Error("Ошибка входных данных optionsData == nil", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", symbol)
+		return
 	}
 
-	// 2. Пишем SQL-запрос с плейсхолдерами
+	//текущий индекс символа
+	currSymbolIndex := -1
+	//для каждого симола
+	for i := range exchange.Symbols {
+		//если это текущий симовл
+		if exchange.Symbols[i].Symbol == symbol {
+			//запишем символ
+			currSymbolIndex = i
+			break
+		}
+	}
+	//если символ не найден
+	if currSymbolIndex == -1 {
+		slog.Error("Ошибка поиска индекса символа", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", symbol)
+		return
+	}
+
+	//сормируем объект для записи
+	symbolData := shared.SymbolData{
+		ExchangeName:    exchange.Name,
+		Symbol:          symbol,
+		LastPriceSpot:   exchange.Symbols[currSymbolIndex].LastCandleSpot.GetKlineLastCandleClosePrice(),
+		LastPriceLinear: exchange.Symbols[currSymbolIndex].LastCandleSpot.GetKlineLastCandleClosePrice(),
+		LinearData:      []shared.LinearData{},
+		OptionsData:     *optionsData,
+		TimeMs:          strconv.FormatInt(timeMs, 10),
+	}
+
+	// 4. Обязательно переводим структуру Go в JSON-строку перед отправкой в БД
+	jsonData, err := json.Marshal(symbolData)
+	if err != nil {
+		slog.Error("Ошибка при создании json из symbolData", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", symbol, "err", err)
+		return
+	}
+
+	// SQL-запрос для PostgreSQL (плейсхолдеры \$1, \$2...)
 	query := `
-		INSERT INTO all_kline_data_buffer_new (
-			exchange_name, 
-			symbol, 
-			category, 
-			kline_interval, 
-			kline_data, 
-			time_ms
-		) VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (exchange_name, symbol, category, kline_interval) 
-		DO UPDATE SET 
-			kline_data = EXCLUDED.kline_data,
-			time_ms = EXCLUDED.time_ms;
+		INSERT INTO all_symbol_data_new (exchange_name, symbol, symbol_data, time_ms)
+		VALUES ($1, $2, $3, $4);
 	`
 
-	// 3. Выполняем запрос через пул соединений
-	_, err = pool.Exec(
-		context.Background(),
-		query,
-		klineData.ExchangeName,
-		klineData.Symbol,
-		klineData.Category,
-		klineData.KlineInterval,
-		string(jsonData),
-		klineData.Time,
-	)
+	// Создаем таймаут НА ОСНОВЕ переданного ctx. Если сработает сигнал остановки приложения ИЛИ пройдет 3 секунды — контекст закроется и pool выдаст ошибку
+	dbCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	// Выполняем запрос через пул соединений
+	_, err = pool.Exec(dbCtx, query, exchange.Name, symbol, string(jsonData), timeMs)
 	if err != nil {
-		slog.Error("Ошибка при сохранении данных в БД", "func", "SaveKlineToDb", "exchangeName", klineData.ExchangeName, "symbol", klineData.Symbol, "err", err)
+		slog.Error("Ошибка при сохранении SymbolData", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", symbol, "timeMs", timeMs, "err", err)
+		return
 	}
 
+	slog.Info("Данные SymbolData сохранены в бд", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", symbol, "timeMs", timeMs)
 }
 
 //------- ПОЛУЧЕНИЕ ДАННЫХ С БИРЖ
@@ -119,7 +142,7 @@ func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
 }
 
 // получает данные kline и сохраняет их в общем объекте
-func GetAndSaveKlineData(pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, category string, interval string, limit string, saveToDb bool) {
+func GetKlineData(pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, category string, interval string, limit string) {
 
 	//получим данные
 	klineData, err := exchange.Client.GetKline(symbol, category, interval, "1000")
@@ -172,10 +195,6 @@ func GetAndSaveKlineData(pool *pgxpool.Pool, exchange *shared.Exchange, symbol s
 
 	}
 
-	//если стоит отметка о сохранении данных
-	if saveToDb == true {
-		SaveKlineToDb(pool, &klineData)
-	}
 }
 
 // получает разово данные kline для всех монет и всех интервалов и сохранеет их в БД
@@ -190,7 +209,7 @@ func GetKlineDataInitial(pool *pgxpool.Pool, exchange *shared.Exchange, allKline
 			for _, interval := range *allKlineIntervals {
 
 				//получим данные и сохраним их
-				GetAndSaveKlineData(pool, exchange, exchange.Symbols[i].Symbol, category, interval, "1000", false)
+				GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, category, interval, "1000")
 
 			}
 		}
@@ -234,7 +253,7 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 			minutes := now.Minute()
 
 			// на каждой 15 минуте и 10 секунде
-			if (minutes == 0 || minutes == 15 || minutes == 30 || minutes == 45) && seconds == 10 {
+			if (minutes%15 == 0) && seconds == 10 {
 
 				//для каждого символа для текущей биржи
 				for i := range exchange.Symbols {
@@ -246,14 +265,14 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 						if slices.Contains(exchange.Symbols[i].Categories, "spot") {
 
 							//получим и сохраним в общий объект и бд данные kline
-							GetAndSaveKlineData(pool, exchange, exchange.Symbols[i].Symbol, "spot", interval, "1000", true)
+							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "spot", interval, "1000")
 						}
 
 						//если для символа стоит отметка получать данные linear
 						if slices.Contains(exchange.Symbols[i].Categories, "linear") {
 
 							//получим и сохраним в общий объект и бд данные kline
-							GetAndSaveKlineData(pool, exchange, exchange.Symbols[i].Symbol, "linear", interval, "1000", true)
+							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "linear", interval, "1000")
 						}
 
 					}
@@ -276,14 +295,14 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 						if slices.Contains(exchange.Symbols[i].Categories, "spot") {
 
 							//получим и сохраним в общий объект и бд данные kline
-							GetAndSaveKlineData(pool, exchange, exchange.Symbols[i].Symbol, "spot", interval, "1000", true)
+							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "spot", interval, "1000")
 						}
 
 						//если для символа стоит отметка получать данные linear
 						if slices.Contains(exchange.Symbols[i].Categories, "linear") {
 
 							//получим и сохраним в общий объект и бд данные kline
-							GetAndSaveKlineData(pool, exchange, exchange.Symbols[i].Symbol, "linear", interval, "1000", true)
+							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "linear", interval, "1000")
 						}
 
 					}
@@ -340,7 +359,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 					return // Выходим из горутины, сокет отключен
 				}
 
-				slog.Debug("На сервер отправлен запрос ping", "func", "startJsonPingWorker", "exchangeName", exchange.Name)
+				slog.Info("На сервер отправлен запрос ping", "func", "startJsonPingWorker", "exchangeName", exchange.Name)
 			case <-stopChan:
 
 				slog.Info("Работа вспомогательной горутины ping-pong остановлена сигналом снаружи", "func", "startJsonPingWorker", "exchangeName", exchange.Name)
@@ -552,7 +571,7 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 		select {
 		case message := <-dataChan:
 
-			slog.Debug("Получено сообщение от ws воркера", "string(message)", string(message))
+			// slog.Debug("Получено сообщение от ws воркера", "string(message)", string(message))
 
 			//декодируем сообщение с помощью клиента
 			data, err := exchange.Client.WsDecodeLinearLastPrice(message)
@@ -603,8 +622,8 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 
 	slog.Info("Запуск воркера", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
 
-	//создадим тикер который каждые 5 секунд будет срабатывать
-	ticker := time.NewTicker(5 * time.Second)
+	//создадим тикер который будет срабатывать каждые 1 секунду
+	ticker := time.NewTicker(1 * time.Second)
 	defer func() {
 		ticker.Stop()
 		slog.Info("Таймер остановлен", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
@@ -615,20 +634,49 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 		//если тикер дал тик
 		case <-ticker.C:
 
-			// slog.Warn("Сработал тикер", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+			//получим текущее время
+			now := time.Now().UTC()
 
-			//для каждого символа - через индекс потому что внутри мьютексы
-			for i := range exchange.Symbols {
+			//отбросим все до секунды
+			now = now.Truncate(time.Second)
 
-				//если для символа стоит отметка получать категорию опционы
-				if slices.Contains(exchange.Symbols[i].Categories, "option") {
-					optionsData, err := exchange.Client.GetOptions(exchange.Symbols[i].Symbol)
-					if err != nil {
-						slog.Error("Ошибка при получении данных по опционам", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
+			//получим секунды
+			seconds := now.Second()
+
+			//получим минуты
+			minutes := now.Minute()
+
+			// на каждой пятой секунде
+			if seconds%5 == 0 {
+
+				// slog.Warn("Сработал тикер", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+
+				//для каждого символа - через индекс потому что внутри мьютексы
+				for i := range exchange.Symbols {
+
+					//если для символа стоит отметка получать категорию опционы
+					if slices.Contains(exchange.Symbols[i].Categories, "option") {
+						optionsData, err := exchange.Client.GetOptions(exchange.Symbols[i].Symbol)
+						if err != nil {
+							slog.Error("Ошибка при получении данных по опционам", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
+						}
+
+						//передадим данне по опционам в общую структуру
+						exchange.Symbols[i].OptionsData = optionsData
+
+						//если мы прошли отметку кратную 15 мин
+						if minutes%15 == 0 {
+
+							//сдвигаем время на 15 минут назад
+							fifteenMinutesAgo := now.Add(-15 * time.Minute)
+
+							//получаем миллисекунды (тип int64)
+							timeMs := fifteenMinutesAgo.UnixMilli()
+
+							//сохраним данные в бд
+							SaveSymbolDataToDb(ctx, pool, exchange, exchange.Symbols[i].Symbol, &optionsData, timeMs)
+						}
 					}
-
-					//передадим данне по опционам в общую структуру
-					exchange.Symbols[i].OptionsData = optionsData
 				}
 			}
 
