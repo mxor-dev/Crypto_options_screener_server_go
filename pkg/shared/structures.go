@@ -191,7 +191,7 @@ type OptionsData struct {
 }
 
 type OptionsLines struct {
-	strikes []string
+	Strikes []string
 
 	Cmark []string
 	Pmark []string

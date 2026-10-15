@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"crypto_options_screener/pkg/convert"
@@ -379,11 +380,19 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 
 	// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "rawOptionsData", rawOptionsData)
 
-	type CallsAndPuts struct {
-		Calls []OptionItem
-		Puts  []OptionItem
+	//страйк и дата - иначе страйк опциона теряется
+	type StrikeAndData struct {
+		Strike string
+		Data   OptionItem
 	}
-	//структура для сортировки
+
+	//структура колов и путов отдельно
+	type CallsAndPuts struct {
+		Calls []StrikeAndData
+		Puts  []StrikeAndData
+	}
+
+	//структура для сортировки колов и путов по серии
 	allSeriesMap := make(map[string]CallsAndPuts)
 
 	//для каждого опциона
@@ -394,16 +403,13 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 
 		//переменные
 		currSeries := parts[1]
+		strike := parts[2]
 		optionType := parts[3]
 
 		//если серия опциона отсутствует
 		if _, ok := allSeriesMap[currSeries]; !ok {
-			//добавим серию
-			allSeriesMap[currSeries] = CallsAndPuts{
-				// Calls: []OptionItem{},
-				// Puts:  []OptionItem{},
-			}
-
+			//добавим новую пустую серию
+			allSeriesMap[currSeries] = CallsAndPuts{}
 		}
 
 		// slog.Warn("Тип опциона", "ExchangeName", b.ExchangeName, "symbol", symbol, "parts[3]", parts[3])
@@ -416,11 +422,26 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 		case "C":
 			// slog.Warn("Добавлен Call")
 			//добавим опцион к Calls
-			currSeriesData.Calls = append(currSeriesData.Calls, rawOptionsData.Result.List[i])
+
+			//создадим локальную структуру опциона
+			localData := StrikeAndData{
+				Strike: strike,
+				Data:   rawOptionsData.Result.List[i],
+			}
+
+			//запишем данные опциона в Calls
+			currSeriesData.Calls = append(currSeriesData.Calls, localData)
 		case "P":
 			// slog.Warn("Добавлен Put")
-			//добавим опцион к Puts
-			currSeriesData.Puts = append(currSeriesData.Puts, rawOptionsData.Result.List[i])
+
+			//создадим локальную структуру опциона
+			localData := StrikeAndData{
+				Strike: strike,
+				Data:   rawOptionsData.Result.List[i],
+			}
+
+			////запишем данные опциона в Puts
+			currSeriesData.Puts = append(currSeriesData.Puts, localData)
 		}
 
 		//записываем обновленную серию обратно в map
@@ -431,6 +452,148 @@ func (b *BybitClient) GetOptions(symbol string) (shared.OptionsData, error) {
 	}
 
 	// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "allSeriesMap", allSeriesMap)
+
+	//обходим полученные серии
+	for series, seriesData := range allSeriesMap {
+
+		//массив трайков
+		var allStrikes []string
+
+		//соберем все страйки их опционов Call
+		for _, call := range seriesData.Calls {
+			allStrikes = append(allStrikes, call.Strike)
+		}
+
+		//сортируем страйки по возрастанию
+		slices.SortFunc(allStrikes, func(a, b string) int {
+			valA, _ := strconv.ParseFloat(a, 64)
+			valB, _ := strconv.ParseFloat(b, 64)
+
+			if valA < valB {
+				return -1 // a должно идти перед b
+			}
+			if valA > valB {
+				return 1 // a должно идти после b
+			}
+			return 0 // значения равны
+		})
+
+		// slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "allStrikes", allStrikes)
+
+		//длина массива всех страйков
+		lenAllStrikes := len(allStrikes)
+
+		//инициализируем локальную структуру с длиной данных lenAllStrikes
+		localOptionsLines := shared.OptionsLines{
+			Strikes: make([]string, lenAllStrikes),
+
+			Cmark: make([]string, lenAllStrikes),
+			Pmark: make([]string, lenAllStrikes),
+			Cask:  make([]string, lenAllStrikes),
+			Pask:  make([]string, lenAllStrikes),
+			Cbid:  make([]string, lenAllStrikes),
+			Pbid:  make([]string, lenAllStrikes),
+
+			Cdelta: make([]string, lenAllStrikes),
+			Pdelta: make([]string, lenAllStrikes),
+			Cgamma: make([]string, lenAllStrikes),
+			Pgamma: make([]string, lenAllStrikes),
+			Cvega:  make([]string, lenAllStrikes),
+			Pvega:  make([]string, lenAllStrikes),
+			Ctheta: make([]string, lenAllStrikes),
+			Ptheta: make([]string, lenAllStrikes),
+
+			Coi:   make([]string, lenAllStrikes),
+			Poi:   make([]string, lenAllStrikes),
+			Ctv:   make([]string, lenAllStrikes),
+			Ptv:   make([]string, lenAllStrikes),
+			Cv24h: make([]string, lenAllStrikes),
+			Pv24h: make([]string, lenAllStrikes),
+
+			CaskIv: make([]string, lenAllStrikes),
+			PaskIv: make([]string, lenAllStrikes),
+			CbidIv: make([]string, lenAllStrikes),
+			PbidIv: make([]string, lenAllStrikes),
+			MarkIv: make([]string, lenAllStrikes),
+		}
+
+		//передадим страйки
+		copy(localOptionsLines.Strikes, allStrikes)
+
+		//для каждого опциона call
+		for _, call := range seriesData.Calls {
+
+			//индекс страйка
+			var strikeIndex int
+
+			//для каждого страйка в данных по страйкам
+			for i, strike := range localOptionsLines.Strikes {
+				//если страйки совпадают
+				if call.Strike == strike {
+					//запишем индекс страйка
+					strikeIndex = i
+					break
+				}
+			}
+
+			//перепишем данные Call опциона в соответствии с индексом
+			localOptionsLines.Cmark[strikeIndex] = call.Data.MarkPrice
+			localOptionsLines.Cask[strikeIndex] = call.Data.Ask1Price
+			localOptionsLines.Cbid[strikeIndex] = call.Data.Bid1Price
+
+			localOptionsLines.Cdelta[strikeIndex] = call.Data.Delta
+			localOptionsLines.Cgamma[strikeIndex] = call.Data.Gamma
+			localOptionsLines.Cvega[strikeIndex] = call.Data.Vega
+			localOptionsLines.Ctheta[strikeIndex] = call.Data.Theta
+
+			localOptionsLines.Coi[strikeIndex] = call.Data.OpenInterest
+			localOptionsLines.Ctv[strikeIndex] = call.Data.TotalVolume
+			localOptionsLines.Cv24h[strikeIndex] = call.Data.Volume24h
+
+			localOptionsLines.CaskIv[strikeIndex] = call.Data.Ask1Iv
+			localOptionsLines.CbidIv[strikeIndex] = call.Data.Bid1Iv
+
+		}
+
+		//для каждого опциона put
+		for _, put := range seriesData.Puts {
+
+			//индекс страйка
+			var strikeIndex int
+
+			//для каждого страйка в данных по страйкам
+			for i, strike := range localOptionsLines.Strikes {
+				//если страйки совпадают
+				if put.Strike == strike {
+					//запишем индекс страйка
+					strikeIndex = i
+					break
+				}
+			}
+
+			//перепишем данные Put опциона в соответствии с индексом
+			localOptionsLines.Pmark[strikeIndex] = put.Data.MarkPrice
+			localOptionsLines.Pask[strikeIndex] = put.Data.Ask1Price
+			localOptionsLines.Pbid[strikeIndex] = put.Data.Bid1Price
+
+			localOptionsLines.Pdelta[strikeIndex] = put.Data.Delta
+			localOptionsLines.Pgamma[strikeIndex] = put.Data.Gamma
+			localOptionsLines.Pvega[strikeIndex] = put.Data.Vega
+			localOptionsLines.Ptheta[strikeIndex] = put.Data.Theta
+
+			localOptionsLines.Poi[strikeIndex] = put.Data.OpenInterest
+			localOptionsLines.Ptv[strikeIndex] = put.Data.TotalVolume
+			localOptionsLines.Pv24h[strikeIndex] = put.Data.Volume24h
+
+			localOptionsLines.PaskIv[strikeIndex] = put.Data.Ask1Iv
+			localOptionsLines.PbidIv[strikeIndex] = put.Data.Bid1Iv
+
+		}
+
+		// ****!!!!!!!!
+		slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "localOptionsLines", localOptionsLines)
+
+	}
 
 	return result, nil
 }
