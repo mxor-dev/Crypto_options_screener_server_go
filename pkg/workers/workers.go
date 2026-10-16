@@ -333,6 +333,8 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 	//внутренняя функция - запускает фоновый тикер для отправки текстовых JSON-пингов
 	startJsonPingWorker := func(conn *websocket.Conn, stopChan chan struct{}) {
 
+		slog.Info("Запуск вспомогательной горутины ping-pong", "func", "WsWorker", "exchangeName", exchange.Name)
+
 		// Создаем тикер с интервалом в 20 секунд
 		ticker := time.NewTicker(20 * time.Second)
 		defer ticker.Stop()
@@ -352,21 +354,21 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 
 				// Отправляем текстовый JSON Ping вместо системного фрейма
 				if err := conn.WriteJSON(pingReq); err != nil {
-					slog.Error("Ошибка отправки JSON Ping", "func", "startJsonPingWorker", "exchangeName", exchange.Name, "error", err)
+					slog.Error("Ошибка отправки JSON Ping", "func", "WsWorker", "exchangeName", exchange.Name, "error", err)
 					conn.Close() // Принудительно закрываем сокет, чтобы разблокировать цикл чтения
 
-					slog.Info("Работа вспомогательной горутины ping-pong завершена по отключению вебсокета", "func", "startJsonPingWorker", "exchangeName", exchange.Name)
+					slog.Info("Работа вспомогательной горутины ping-pong завершена по отключению вебсокета", "func", "WsWorker", "exchangeName", exchange.Name)
 					return // Выходим из горутины, сокет отключен
 				}
 
-				slog.Info("На сервер отправлен запрос ping", "func", "startJsonPingWorker", "exchangeName", exchange.Name)
+				slog.Info("На сервер отправлен запрос ping", "func", "WsWorker", "exchangeName", exchange.Name)
 			case <-stopChan:
 
-				slog.Info("Работа вспомогательной горутины ping-pong остановлена сигналом снаружи", "func", "startJsonPingWorker", "exchangeName", exchange.Name)
+				slog.Info("Работа вспомогательной горутины ping-pong остановлена сигналом снаружи", "func", "WsWorker", "exchangeName", exchange.Name)
 				return // Выходим по внешнемук сигналу
 
 			case <-ctx.Done():
-				slog.Info("Работа вспомогательной горутины ping-pong завершена по контексту", "func", "startJsonPingWorker", "exchangeName", exchange.Name)
+				slog.Info("Работа вспомогательной горутины ping-pong завершена по контексту", "func", "WsWorker", "exchangeName", exchange.Name)
 				return // Выходим по контексту приложения
 			}
 		}
@@ -499,7 +501,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 			//если пришло сообщение pong (в ответ на наш ping)
 			if isPong == true {
 
-				slog.Debug("От сервера получен ответ pong", "func", "GetKlineCandleLast", "exchangeName", exchange.Name)
+				slog.Info("От сервера получен ответ pong", "func", "GetKlineCandleLast", "exchangeName", exchange.Name)
 
 				//отключим дедлайн
 				conn.SetReadDeadline(time.Time{})
@@ -665,7 +667,7 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 						exchange.Symbols[i].OptionsData = optionsData
 
 						//если мы прошли отметку кратную 15 мин
-						if minutes%15 == 0 {
+						if minutes%15 == 0 && seconds == 10 {
 
 							//сдвигаем время на 15 минут назад
 							fifteenMinutesAgo := now.Add(-15 * time.Minute)
