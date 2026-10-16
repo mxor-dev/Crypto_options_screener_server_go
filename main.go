@@ -180,6 +180,10 @@ func main() {
 				//запускаем воркера для получения данных по опционам по таймеру
 				go workers.GetOptionsDataTimer(ctx, pool, &exchange)
 
+				//запуск воркера для сохранения данных
+				go workers.SaveSymbolDataToDbTimer(ctx, pool, &exchange)
+
+				//запуск воркера для получения статистики сервера
 				go workers.GetMemStatsTimer(ctx, &exchange)
 
 			}()

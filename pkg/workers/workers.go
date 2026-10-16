@@ -15,73 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-//------- СОХРАНЕНИЕ ДАННЫХ БД
-
-// сохраняет данные по опционам в бд
-func SaveSymbolDataToDb(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, optionsData *[]shared.OptionsData, timeMs int64) {
-
-	//защита от nil в указателе
-	if optionsData == nil {
-		slog.Error("Ошибка входных данных optionsData == nil", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", symbol)
-		return
-	}
-
-	//текущий индекс символа
-	currSymbolIndex := -1
-	//для каждого симола
-	for i := range exchange.Symbols {
-		//если это текущий симовл
-		if exchange.Symbols[i].Symbol == symbol {
-			//запишем символ
-			currSymbolIndex = i
-			break
-		}
-	}
-	//если символ не найден
-	if currSymbolIndex == -1 {
-		slog.Error("Ошибка поиска индекса символа", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", symbol)
-		return
-	}
-
-	//сормируем объект для записи
-	symbolData := shared.SymbolData{
-		ExchangeName:    exchange.Name,
-		Symbol:          symbol,
-		LastPriceSpot:   exchange.Symbols[currSymbolIndex].LastCandleSpot.GetKlineLastCandleClosePrice(),
-		LastPriceLinear: exchange.Symbols[currSymbolIndex].LastCandleSpot.GetKlineLastCandleClosePrice(),
-		LinearData:      []shared.LinearData{},
-		OptionsData:     *optionsData,
-		TimeMs:          strconv.FormatInt(timeMs, 10),
-	}
-
-	// 4. Обязательно переводим структуру Go в JSON-строку перед отправкой в БД
-	jsonData, err := json.Marshal(symbolData)
-	if err != nil {
-		slog.Error("Ошибка при создании json из symbolData", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", symbol, "err", err)
-		return
-	}
-
-	// SQL-запрос для PostgreSQL (плейсхолдеры \$1, \$2...)
-	query := `
-		INSERT INTO all_symbol_data_new (exchange_name, symbol, symbol_data, time_ms)
-		VALUES ($1, $2, $3, $4);
-	`
-
-	// Создаем таймаут НА ОСНОВЕ переданного ctx. Если сработает сигнал остановки приложения ИЛИ пройдет 3 секунды — контекст закроется и pool выдаст ошибку
-	dbCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	// Выполняем запрос через пул соединений
-	_, err = pool.Exec(dbCtx, query, exchange.Name, symbol, string(jsonData), timeMs)
-	if err != nil {
-		slog.Error("Ошибка при сохранении SymbolData", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", symbol, "timeMs", timeMs, "err", err)
-		return
-	}
-
-	slog.Info("Данные SymbolData сохранены в бд", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", symbol, "timeMs", timeMs)
-}
-
-//------- ПОЛУЧЕНИЕ ДАННЫХ С БИРЖ
+//------- РАЗОВЫЕ ФУНКЦИИ
 
 // получает данные по всем монеткам для конкретной биржи и сохраняеет ее в БД
 func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
@@ -219,6 +153,8 @@ func GetKlineDataInitial(pool *pgxpool.Pool, exchange *shared.Exchange, allKline
 	}
 }
 
+//------- ВОРКЕРЫ И ТАЙМЕРЫ
+
 // получает данные с определенным интервалом и записывает их в бд
 func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
@@ -316,6 +252,63 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 		//если работа программы остановлены
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
+			slog.Info("Воркер остановлен", "func", "GetKlineDataTimer", "exchangeName", exchange.Name)
+			return
+		}
+	}
+}
+
+// воркер для получения данных по опционам по таймеру
+func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
+
+	slog.Info("Запуск воркера", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+
+	//создадим тикер который будет срабатывать каждые 1 секунду
+	ticker := time.NewTicker(1 * time.Second)
+	defer func() {
+		ticker.Stop()
+		slog.Info("Таймер остановлен", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+	}()
+
+	for {
+		select {
+		//если тикер дал тик
+		case <-ticker.C:
+
+			//получим текущее время
+			now := time.Now().UTC()
+
+			//отбросим все до секунды
+			now = now.Truncate(time.Second)
+
+			//получим секунды
+			seconds := now.Second()
+
+			// на каждой пятой секунде
+			if seconds%5 == 0 {
+
+				// slog.Warn("Сработал тикер", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+
+				//для каждого символа - через индекс потому что внутри мьютексы
+				for i := range exchange.Symbols {
+
+					//если для символа стоит отметка получать категорию опционы
+					if slices.Contains(exchange.Symbols[i].Categories, "option") {
+						optionsData, err := exchange.Client.GetOptions(exchange.Symbols[i].Symbol)
+						if err != nil {
+							slog.Error("Ошибка при получении данных по опционам", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
+						}
+
+						//передадим данне по опционам в общую структуру
+						exchange.Symbols[i].OptionsData = optionsData
+
+					}
+				}
+			}
+
+		case <-ctx.Done():
+			// Завершаем работу функции по контексту - все defer отрабатают автоматически
+			slog.Info("Воркер остановлен", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
 			return
 		}
 	}
@@ -323,6 +316,8 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 
 // запускает воркера для получения данных с определенного канала
 func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string, topicArr []string, dataChan chan []byte) {
+
+	slog.Info("Запуск воркера", "func", "WsWorker", "exchangeName", exchange.Name)
 
 	//структура для подписки
 	type Request struct {
@@ -483,6 +478,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 				//если работа программы остановлены
 				case <-ctx.Done():
 					// Завершаем работу по контексту
+					slog.Info("Воркер остановлен", "func", "WsWorker", "exchangeName", exchange.Name)
 					return
 				}
 			}
@@ -619,16 +615,16 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 
 }
 
-// воркер для получения данных по опционам по таймеру
-func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
+// воркер для сохранения данных в бд по таймеру
+func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
-	slog.Info("Запуск воркера", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+	slog.Info("Запуск воркера", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name)
 
 	//создадим тикер который будет срабатывать каждые 1 секунду
 	ticker := time.NewTicker(1 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер остановлен", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+		slog.Info("Таймер остановлен", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name)
 	}()
 
 	for {
@@ -648,42 +644,60 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 			//получим минуты
 			minutes := now.Minute()
 
-			// на каждой пятой секунде
-			if seconds%5 == 0 {
-
-				// slog.Warn("Сработал тикер", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+			//если мы прошли отметку кратную 15 мин
+			if minutes%15 == 0 && seconds == 10 {
 
 				//для каждого символа - через индекс потому что внутри мьютексы
 				for i := range exchange.Symbols {
 
-					//если для символа стоит отметка получать категорию опционы
-					if slices.Contains(exchange.Symbols[i].Categories, "option") {
-						optionsData, err := exchange.Client.GetOptions(exchange.Symbols[i].Symbol)
-						if err != nil {
-							slog.Error("Ошибка при получении данных по опционам", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
-						}
+					//сдвигаем время на 15 минут назад
+					fifteenMinutesAgo := now.Add(-15 * time.Minute)
 
-						//передадим данне по опционам в общую структуру
-						exchange.Symbols[i].OptionsData = optionsData
+					//получаем миллисекунды (тип int64)
+					timeMs := fifteenMinutesAgo.UnixMilli()
 
-						//если мы прошли отметку кратную 15 мин
-						if minutes%15 == 0 && seconds == 10 {
-
-							//сдвигаем время на 15 минут назад
-							fifteenMinutesAgo := now.Add(-15 * time.Minute)
-
-							//получаем миллисекунды (тип int64)
-							timeMs := fifteenMinutesAgo.UnixMilli()
-
-							//сохраним данные в бд
-							SaveSymbolDataToDb(ctx, pool, exchange, exchange.Symbols[i].Symbol, &optionsData, timeMs)
-						}
+					//сформируем объект для записи
+					symbolData := shared.SymbolData{
+						ExchangeName:    exchange.Name,
+						Symbol:          exchange.Symbols[i].Symbol,
+						LastPriceSpot:   exchange.Symbols[i].LastCandleSpot.GetKlineLastCandleClosePrice(),
+						LastPriceLinear: exchange.Symbols[i].LastCandleSpot.GetKlineLastCandleClosePrice(),
+						LinearData:      []shared.LinearData{},
+						OptionsData:     exchange.Symbols[i].OptionsData,
+						TimeMs:          strconv.FormatInt(timeMs, 10),
 					}
+
+					// 4. Обязательно переводим структуру Go в JSON-строку перед отправкой в БД
+					jsonData, err := json.Marshal(symbolData)
+					if err != nil {
+						slog.Error("Ошибка при создании json из symbolData", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
+						return
+					}
+
+					// SQL-запрос для PostgreSQL (плейсхолдеры \$1, \$2...)
+					query := `
+						INSERT INTO all_symbol_data_new (exchange_name, symbol, symbol_data, time_ms)
+						VALUES ($1, $2, $3, $4);
+					`
+
+					// Создаем таймаут НА ОСНОВЕ переданного ctx. Если сработает сигнал остановки приложения ИЛИ пройдет 3 секунды — контекст закроется и pool выдаст ошибку
+					dbCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+					defer cancel()
+
+					// Выполняем запрос через пул соединений
+					_, err = pool.Exec(dbCtx, query, exchange.Name, exchange.Symbols[i].Symbol, string(jsonData), timeMs)
+					if err != nil {
+						slog.Error("Ошибка при сохранении SymbolData", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "timeMs", timeMs, "err", err)
+						return
+					}
+
+					slog.Info("Данные SymbolData сохранены в бд", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "timeMs", timeMs)
 				}
 			}
 
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
+			slog.Info("Воркер остановлен", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
 			return
 		}
 	}
