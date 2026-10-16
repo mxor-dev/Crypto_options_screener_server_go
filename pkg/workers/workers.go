@@ -26,7 +26,7 @@ func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
 		//получим данные для текущей монетки
 		symbolInfo, err := exchange.Client.GetSymbolInfo(exchange.Symbols[i].Symbol)
 		if err != nil {
-			slog.Error("Ошибка при получении", "func", "GetAllSymbolsInfo", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol)
+			slog.Error("Ошибка при получении", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol)
 		}
 
 		slog.Info("Получены данные SymbolInfo", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "symbolInfo", symbolInfo)
@@ -81,13 +81,13 @@ func GetKlineData(pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, 
 	//получим данные
 	klineData, err := exchange.Client.GetKline(symbol, category, interval, "1000")
 	if err != nil {
-		slog.Error("Ошибка при получении kline", "fun", "GetKlineDataInitial", "exchangeName", exchange.Name, "category", category, "symbol", symbol, "err", err)
+		slog.Error("Ошибка при получении kline", "exchangeName", exchange.Name, "category", category, "symbol", symbol, "err", err)
 		return
 	}
 
 	//если длина массива данных нулевая
 	if len(klineData.KlineData) == 0 {
-		slog.Warn("Длина данных len(klineData.KlineData) == 0", "fun", "GetKlineDataInitial", "exchangeName", exchange.Name, "category", category, "symbol", symbol, "err", err)
+		slog.Warn("Длина данных len(klineData.KlineData) == 0", "fun", "exchangeName", exchange.Name, "category", category, "symbol", symbol, "err", err)
 		return
 	}
 
@@ -106,7 +106,7 @@ func GetKlineData(pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, 
 
 	//если символ не найден
 	if symbolData == nil {
-		slog.Error("Ошибка: символ не найден в структуре exchange", "fun", "GetKlineDataInitial", "exchangeName", exchange.Name, "category", category, "symbol", symbol, "err", err)
+		slog.Error("Ошибка: символ не найден в структуре exchange", "exchangeName", exchange.Name, "category", category, "symbol", symbol, "err", err)
 		return
 	}
 
@@ -158,13 +158,13 @@ func GetKlineDataInitial(pool *pgxpool.Pool, exchange *shared.Exchange, allKline
 // получает данные с определенным интервалом и записывает их в бд
 func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
-	slog.Info("Запуск воркера", "func", "GetKlineDataTimer", "exchangeName", exchange.Name)
+	slog.Info("Запуск воркера", "exchangeName", exchange.Name)
 
 	//создадим тикер который каждые 1 секунду будет срабатывать
 	ticker := time.NewTicker(1 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер остановлен", "func", "GetKlineDataTimer", "exchangeName", exchange.Name)
+		slog.Info("Таймер остановлен", "exchangeName", exchange.Name)
 	}()
 
 	//переменная для остановке
@@ -252,7 +252,7 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 		//если работа программы остановлены
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
-			slog.Info("Воркер остановлен", "func", "GetKlineDataTimer", "exchangeName", exchange.Name)
+			slog.Info("Воркер остановлен", "exchangeName", exchange.Name)
 			return
 		}
 	}
@@ -261,13 +261,13 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 // воркер для получения данных по опционам по таймеру
 func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
-	slog.Info("Запуск воркера", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+	slog.Info("Запуск воркера", "exchangeName", exchange.Name)
 
 	//создадим тикер который будет срабатывать каждые 1 секунду
 	ticker := time.NewTicker(1 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер остановлен", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+		slog.Info("Таймер остановлен", "exchangeName", exchange.Name)
 	}()
 
 	for {
@@ -296,7 +296,7 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 					if slices.Contains(exchange.Symbols[i].Categories, "option") {
 						optionsData, err := exchange.Client.GetOptions(exchange.Symbols[i].Symbol)
 						if err != nil {
-							slog.Error("Ошибка при получении данных по опционам", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
+							slog.Error("Ошибка при получении данных по опционам", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
 						}
 
 						//передадим данне по опционам в общую структуру
@@ -308,8 +308,55 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
-			slog.Info("Воркер остановлен", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+			slog.Info("Воркер остановлен", "exchangeName", exchange.Name)
 			return
+		}
+	}
+}
+
+// воркер для отправики сообщений ping
+func WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct{}, exchangeName string) {
+
+	slog.Info("Запуск воркера", "exchangeName", exchangeName)
+
+	// Создаем тикер с интервалом в 20 секунд
+	ticker := time.NewTicker(20 * time.Second)
+	defer func() {
+		ticker.Stop()
+		slog.Info("Таймер остановлен", "exchangeName", exchangeName)
+	}()
+
+	// Структура текстового запроса для Bybit / большинства бирж
+	type JsonPing struct {
+		Op string `json:"op"`
+	}
+	pingReq := JsonPing{Op: "ping"}
+
+	for {
+		select {
+		case <-ticker.C:
+			// Взводим дедлайн (таймаут) на 5 секунд. Если за это время сервер не пришлет нам
+			// в обычном сообщении в ответ JSON {"op":"pong"}, сокет отключится и выдаст ошибку в чтении.
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+			// Отправляем текстовый JSON Ping вместо системного фрейма
+			if err := conn.WriteJSON(pingReq); err != nil {
+				slog.Error("Ошибка отправки JSON Ping", "exchangeName", exchangeName, "error", err)
+				conn.Close() // Принудительно закрываем сокет, чтобы разблокировать цикл чтения
+
+				slog.Info("Работа вспомогательной горутины ping-pong завершена по отключению вебсокета", "exchangeName", exchangeName)
+				return // Выходим из горутины, сокет отключен
+			}
+
+			slog.Info("На сервер отправлен запрос ping", "exchangeName", exchangeName)
+		case <-stopChan:
+
+			slog.Info("Воркер остановлен по сигналу", "exchangeName", exchangeName)
+			return // Выходим по внешнемук сигналу
+
+		case <-ctx.Done():
+			slog.Info("Воркер остановлен по контксту", "exchangeName", exchangeName)
+			return // Выходим по контексту приложения
 		}
 	}
 }
@@ -317,7 +364,7 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 // запускает воркера для получения данных с определенного канала
 func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string, topicArr []string, dataChan chan []byte) {
 
-	slog.Info("Запуск воркера", "func", "WsWorker", "exchangeName", exchange.Name)
+	slog.Info("Запуск воркера", "exchangeName", exchange.Name)
 
 	//структура для подписки
 	type Request struct {
@@ -325,54 +372,10 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 		Args []string `json:"args"`
 	}
 
-	//внутренняя функция - запускает фоновый тикер для отправки текстовых JSON-пингов
-	startJsonPingWorker := func(conn *websocket.Conn, stopChan chan struct{}) {
-
-		slog.Info("Запуск вспомогательной горутины ping-pong", "func", "WsWorker", "exchangeName", exchange.Name)
-
-		// Создаем тикер с интервалом в 20 секунд
-		ticker := time.NewTicker(20 * time.Second)
-		defer ticker.Stop()
-
-		// Структура текстового запроса для Bybit / большинства бирж
-		type JsonPing struct {
-			Op string `json:"op"`
-		}
-		pingReq := JsonPing{Op: "ping"}
-
-		for {
-			select {
-			case <-ticker.C:
-				// Взводим дедлайн (таймаут) на 5 секунд. Если за это время сервер не пришлет нам
-				// в обычном сообщении в ответ JSON {"op":"pong"}, сокет отключится и выдаст ошибку в чтении.
-				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-
-				// Отправляем текстовый JSON Ping вместо системного фрейма
-				if err := conn.WriteJSON(pingReq); err != nil {
-					slog.Error("Ошибка отправки JSON Ping", "func", "WsWorker", "exchangeName", exchange.Name, "error", err)
-					conn.Close() // Принудительно закрываем сокет, чтобы разблокировать цикл чтения
-
-					slog.Info("Работа вспомогательной горутины ping-pong завершена по отключению вебсокета", "func", "WsWorker", "exchangeName", exchange.Name)
-					return // Выходим из горутины, сокет отключен
-				}
-
-				slog.Info("На сервер отправлен запрос ping", "func", "WsWorker", "exchangeName", exchange.Name)
-			case <-stopChan:
-
-				slog.Info("Работа вспомогательной горутины ping-pong остановлена сигналом снаружи", "func", "WsWorker", "exchangeName", exchange.Name)
-				return // Выходим по внешнемук сигналу
-
-			case <-ctx.Done():
-				slog.Info("Работа вспомогательной горутины ping-pong завершена по контексту", "func", "WsWorker", "exchangeName", exchange.Name)
-				return // Выходим по контексту приложения
-			}
-		}
-	}
-
 	//установим подключение вебсокет с помощю клиента
 	conn, _, err := exchange.Client.WsConnect(streamType)
 	if err != nil {
-		slog.Error("Ошибка подключения к ws", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType, "error", err)
+		slog.Error("Ошибка подключения к ws", "exchangeName", exchange.Name, "streamType", streamType, "error", err)
 	}
 	defer conn.Close()
 
@@ -380,7 +383,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 	pingStopChan := make(chan struct{})
 
 	//запустим воркер для пинга к серверу по интервалу
-	go startJsonPingWorker(conn, pingStopChan)
+	go WsPingTimer(ctx, conn, pingStopChan, exchange.Name)
 
 	//запрос подписки
 	req := Request{
@@ -390,10 +393,10 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 
 	//подпишемся на каналы
 	if err := conn.WriteJSON(req); err != nil {
-		slog.Error("Ошибка подписки по ws", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "error", err)
+		slog.Error("Ошибка подписки по ws", "exchangeName", exchange.Name, "error", err)
 	}
 
-	slog.Info("Оформлена подписка на Tickers по ws", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
+	slog.Info("Оформлена подписка на Tickers по ws", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
 
 	//горутина для отключения воркера по контексту
 	go func() {
@@ -404,7 +407,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 		// закрываем соедиение
 		conn.Close()
 
-		slog.Info("Работа горутины закрывающей соеденение ws завершена", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType)
+		slog.Info("Работа горутины закрывающей соеденение ws завершена", "exchangeName", exchange.Name, "streamType", streamType)
 	}()
 
 	//цикл чтения данных из вебсокета
@@ -412,7 +415,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 
 		//если контекст отменен — выходим, не пытаясь подключиться снова
 		if ctx.Err() != nil {
-			slog.Info("Ws linear отключен по контексту", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
+			slog.Info("Ws linear отключен по контексту", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
 			break
 		}
 
@@ -421,16 +424,16 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 		if err != nil {
 			// Если контекст отменен — это штатное закрытие сокета, выходим без паники
 			if ctx.Err() != nil {
-				slog.Info("Websocket отключен по контексту", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
+				slog.Info("Websocket отключен по контексту", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
 				break
 			}
 
-			slog.Error("Ошибка чтения ws", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "error", err)
+			slog.Error("Ошибка чтения ws", "exchangeName", exchange.Name, "error", err)
 
 			//остановим горутину пинга на сервер
 			close(pingStopChan)
 
-			slog.Info("Запущен таймер переподключение WebSocket", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType)
+			slog.Info("Запущен таймер переподключение WebSocket", "exchangeName", exchange.Name, "streamType", streamType)
 
 			//таймер для переподключения
 			ticker := time.NewTicker(20 * time.Second)
@@ -443,12 +446,12 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 				//если тикер дал тик
 				case <-ticker.C:
 
-					slog.Info("Переподключение WebSocket...", "func", "GetKlineCandleLast", "exchangeName", exchange.Name)
+					slog.Info("Переподключение WebSocket...", "exchangeName", exchange.Name)
 
 					//переопределим подключение
 					conn, _, err = exchange.Client.WsConnect(streamType)
 					if err != nil {
-						slog.Error("Ошибка подключения к ws", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "error", err)
+						slog.Error("Ошибка подключения к ws", "exchangeName", exchange.Name, "error", err)
 
 						//продолжим цикл for - да да continue продолжает for а если break то прерывает селект)))
 						continue
@@ -459,18 +462,18 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 					pingStopChan = make(chan struct{})
 
 					//запустим воркер для пинга к серверу по интервалу на новом соединении и сновым каналом управления
-					go startJsonPingWorker(conn, pingStopChan)
+					go WsPingTimer(ctx, conn, pingStopChan, exchange.Name)
 
 					//подпишемся на каналы
 					if err := conn.WriteJSON(req); err != nil {
-						slog.Error("Ошибка подписки по ws", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "error", err)
+						slog.Error("Ошибка подписки по ws", "exchangeName", exchange.Name, "error", err)
 					}
 
-					slog.Info("Оформлена подписка на Tickers по ws", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
+					slog.Info("Оформлена подписка на Tickers по ws", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
 
 					//отановим таймер подключения
 					ticker.Stop()
-					slog.Debug("Таймер для переподключения к WebsocketLinear остановлен", "func", "GetKlineCandleLast", "exchangeName", exchange.Name)
+					slog.Debug("Таймер для переподключения к WebsocketLinear остановлен", "exchangeName", exchange.Name)
 
 					//остановим цикл for через метку ReconnectLoop
 					break ReconnectLoop
@@ -478,7 +481,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 				//если работа программы остановлены
 				case <-ctx.Done():
 					// Завершаем работу по контексту
-					slog.Info("Воркер остановлен", "func", "WsWorker", "exchangeName", exchange.Name)
+					slog.Info("Воркер остановлен", "exchangeName", exchange.Name)
 					return
 				}
 			}
@@ -491,13 +494,13 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 
 			isPong, err := exchange.Client.WsDecodePong(message)
 			if err != nil {
-				slog.Error("Ошибка при декодировании pong", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "error", err)
+				slog.Error("Ошибка при декодировании pong", "exchangeName", exchange.Name, "error", err)
 				slog.Error("Полное сообщение от сервера", "string(message)", string(message))
 			}
 			//если пришло сообщение pong (в ответ на наш ping)
 			if isPong == true {
 
-				slog.Info("От сервера получен ответ pong", "func", "GetKlineCandleLast", "exchangeName", exchange.Name)
+				slog.Info("От сервера получен ответ pong", "exchangeName", exchange.Name)
 
 				//отключим дедлайн
 				conn.SetReadDeadline(time.Time{})
@@ -536,7 +539,7 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 			//получим сформированный топик от клиента
 			topic, err := exchange.Client.FormTopic(streamType, []string{exchange.Symbols[i].Symbol})
 			if err != nil {
-				slog.Error("Ошибка при формировании топика", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "error", err)
+				slog.Error("Ошибка при формировании топика", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "error", err)
 			}
 			//добавим элемент
 			topicArr = append(topicArr, topic)
@@ -551,7 +554,7 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 			//получим сформированный топик от клиента
 			topic, err := exchange.Client.FormTopic(streamType, []string{exchange.Symbols[i].Symbol})
 			if err != nil {
-				slog.Error("Ошибка при формировании топика", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "error", err)
+				slog.Error("Ошибка при формировании топика", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "error", err)
 			}
 			//добавим элемент
 			topicArr = append(topicArr, topic)
@@ -574,13 +577,13 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 			//декодируем сообщение с помощью клиента
 			data, err := exchange.Client.WsDecodeLinearLastPrice(message)
 			if err != nil {
-				slog.Error("Ошибка при декодировании lastPrice", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "error", err)
+				slog.Error("Ошибка при декодировании lastPrice", "exchangeName", exchange.Name, "error", err)
 			}
 
 			//если есть изменения по LastPrice
 			if data.LastPrice != "" {
 
-				// slog.Debug("Получены данные lastPrice", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", data.Symbol, "LastPrice", data.LastPrice)
+				// slog.Debug("Получены данные lastPrice", "exchangeName", exchange.Name, "symbol", data.Symbol, "LastPrice", data.LastPrice)
 
 				//получим последнюю цену по символу
 				for i := range exchange.Symbols {
@@ -598,7 +601,7 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 							//обновим свечку
 							exchange.Symbols[i].LastCandleLinear.UpdateKlineLastCandle(data.LastPrice)
 
-							// slog.Warn("Обновленная lastCandle", "func", "GetKlineCandleLast", "exchangeName", exchange.Name, "symbol", data.Symbol, "streamType", streamType, "lastCandle", exchange.Symbols[i].LastCandleLinear.GetKlineLastCandle())
+							// slog.Warn("Обновленная lastCandle",  "exchangeName", exchange.Name, "symbol", data.Symbol, "streamType", streamType, "lastCandle", exchange.Symbols[i].LastCandleLinear.GetKlineLastCandle())
 
 						}
 
@@ -608,7 +611,7 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 			}
 
 		case <-ctx.Done():
-			slog.Info("Внешний обработчик остановлен по контексту", "func", "GetKlineCandleLast", "exchangeName", exchange.Name)
+			slog.Info("Внешний обработчик остановлен по контексту", "exchangeName", exchange.Name)
 			return
 		}
 	}
@@ -618,13 +621,13 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 // воркер для сохранения данных в бд по таймеру
 func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
-	slog.Info("Запуск воркера", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name)
+	slog.Info("Запуск воркера", "exchangeName", exchange.Name)
 
 	//создадим тикер который будет срабатывать каждые 1 секунду
 	ticker := time.NewTicker(1 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер остановлен", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name)
+		slog.Info("Таймер остановлен", "exchangeName", exchange.Name)
 	}()
 
 	for {
@@ -670,7 +673,7 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 					// 4. Обязательно переводим структуру Go в JSON-строку перед отправкой в БД
 					jsonData, err := json.Marshal(symbolData)
 					if err != nil {
-						slog.Error("Ошибка при создании json из symbolData", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
+						slog.Error("Ошибка при создании json из symbolData", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
 						return
 					}
 
@@ -687,17 +690,17 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 					// Выполняем запрос через пул соединений
 					_, err = pool.Exec(dbCtx, query, exchange.Name, exchange.Symbols[i].Symbol, string(jsonData), timeMs)
 					if err != nil {
-						slog.Error("Ошибка при сохранении SymbolData", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "timeMs", timeMs, "err", err)
+						slog.Error("Ошибка при сохранении SymbolData", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "timeMs", timeMs, "err", err)
 						return
 					}
 
-					slog.Info("Данные SymbolData сохранены в бд", "func", "SaveSymbolDataToDb", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "timeMs", timeMs)
+					slog.Info("Данные SymbolData сохранены в бд", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "timeMs", timeMs)
 				}
 			}
 
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
-			slog.Info("Воркер остановлен", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+			slog.Info("Воркер остановлен", "exchangeName", exchange.Name)
 			return
 		}
 	}
@@ -706,13 +709,13 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 // воркер раз в 10 сек показывает размер объекта
 func GetMemStatsTimer(ctx context.Context, exchange *shared.Exchange) {
 
-	slog.Info("Запуск воркера", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+	slog.Info("Запуск воркера", "exchangeName", exchange.Name)
 
 	//создадим тикер который каждые 10 секунд будет срабатывать
 	ticker := time.NewTicker(60 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер остановлен", "func", "GetSizeTimer", "exchangeName", exchange.Name)
+		slog.Info("Таймер остановлен", "exchangeName", exchange.Name)
 	}()
 
 	for {
@@ -723,10 +726,11 @@ func GetMemStatsTimer(ctx context.Context, exchange *shared.Exchange) {
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
 
-			slog.Warn("Метрики памяти", "func", "GetSizeTimer", "Alloc_MB", float64(m.Alloc)/1024/1024, "Sys_MB", float64(m.Sys)/1024/1024, "HeapObjects", m.HeapObjects)
+			slog.Warn("Метрики памяти", "Alloc_MB", float64(m.Alloc)/1024/1024, "Sys_MB", float64(m.Sys)/1024/1024, "HeapObjects", m.HeapObjects)
 
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
+			slog.Info("Воркер остановлен", "exchangeName", exchange.Name)
 			return
 		}
 	}

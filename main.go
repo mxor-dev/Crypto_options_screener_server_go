@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,6 +33,23 @@ func main() {
 		Level:      slog.LevelDebug, // Уровень логирования
 		TimeFormat: time.Kitchen,    // Короткое время (например, 15:04)
 		AddSource:  true,            // Имя файла модуля и номер строки!
+
+		//фоорматтер для вывода атрибутов - выводим "имя_файла:номер_строки имя_функции"
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			// Проверяем, что обрабатываем системное поле источника (source)
+			if a.Key == slog.SourceKey {
+				if source, ok := a.Value.Any().(*slog.Source); ok {
+					// Получаем только чистое имя функции без пути к пакету
+					funcName := source.Function
+					if idx := strings.LastIndex(funcName, "."); idx != -1 {
+						funcName = funcName[idx+1:]
+					}
+					// Форматируем вывод в виде: [функция -> файл:строка]
+					a.Value = slog.StringValue(fmt.Sprintf("%s:%d %s", filepath.Base(source.File), source.Line, funcName))
+				}
+			}
+			return a
+		},
 	})
 
 	//логгер
@@ -38,23 +57,6 @@ func main() {
 
 	//установим логгер по умолчанию
 	slog.SetDefault(logger)
-
-	// Цветной вывод
-	// slog.Debug("Отладка")
-	// slog.Info("Уровень инфо")
-	// slog.Warn("Предупреждение")
-	// slog.Error("Ошибка")
-
-	//сокращение логов
-	// info := func(msg string, args ...any) {
-	// 	slog.Info(msg, args...)
-	// }
-	// warn := func(msg string, args ...any) {
-	// 	slog.Info(msg, args...)
-	// }
-	// error_slog := func(msg string, args ...any) {
-	// 	slog.Error(msg, args...)
-	// }
 
 	slog.Info("Старт приложения")
 
@@ -150,43 +152,40 @@ func main() {
 		//если биржа активна
 		if exchange.IsActive {
 
-			//запустим горутину для обработки получения данных
-			go func() {
+			//выберем имя биржи
+			switch exchange.Name {
+			case "bybit":
 
-				switch exchange.Name {
-				case "bybit":
+				//создадим клиента
+				exchange.Client = bybit.New("public_data", "public_data")
 
-					//создадим клиента
-					exchange.Client = bybit.New("public_data", "public_data")
+				slog.Info("Создан клиент для биржи", "exchangeName", exchange.Name)
+			}
 
-					slog.Info("Создан клиент для биржи", "exchangeName", exchange.Name)
-				}
+			//получим информацию для всех монет на бирже и сохраним в бд
+			workers.GetAllSymbolsInfo(pool, &exchange)
 
-				//получим информацию для всех монет на бирже и сохраним в бд
-				workers.GetAllSymbolsInfo(pool, &exchange)
+			//получаем данные kline spot для всех монет, всех интервалов и сохраним в бд
+			workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "spot")
 
-				//получаем данные kline spot для всех монет, всех интервалов и сохраним в бд
-				workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "spot")
+			//получаем данные kline linear для всех монет, всех интервалов и сохраним в бд
+			workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "linear")
 
-				//получаем данные kline linear для всех монет, всех интервалов и сохраним в бд
-				workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "linear")
+			//запускаем горутину воркера для получения обновления данных kline по таймеру
+			go workers.GetKlineDataTimer(ctx, pool, &exchange)
 
-				//запускаем горутину воркера для получения обновления данных kline по таймеру
-				go workers.GetKlineDataTimer(ctx, pool, &exchange)
+			//запускаем воркера для получения последних свечей
+			go workers.GetKlineCandleLast(ctx, pool, &exchange, "linear")
 
-				//запускаем воркера для получения последних свечей
-				go workers.GetKlineCandleLast(ctx, pool, &exchange, "linear")
+			//запускаем воркера для получения данных по опционам по таймеру
+			go workers.GetOptionsDataTimer(ctx, pool, &exchange)
 
-				//запускаем воркера для получения данных по опционам по таймеру
-				go workers.GetOptionsDataTimer(ctx, pool, &exchange)
+			//запуск воркера для сохранения данных
+			go workers.SaveSymbolDataToDbTimer(ctx, pool, &exchange)
 
-				//запуск воркера для сохранения данных
-				go workers.SaveSymbolDataToDbTimer(ctx, pool, &exchange)
+			//запуск воркера для получения статистики сервера
+			go workers.GetMemStatsTimer(ctx, &exchange)
 
-				//запуск воркера для получения статистики сервера
-				go workers.GetMemStatsTimer(ctx, &exchange)
-
-			}()
 		}
 
 	}

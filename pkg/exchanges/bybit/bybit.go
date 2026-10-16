@@ -111,7 +111,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (shared.SymbolInfo, error) {
 		result.SpotPricePrecision = convert.GetPrecisionFromString(result.SpotTickSize)
 
 	} else {
-		slog.Warn("Нет данных по споту", "fun", "GetSymbolInfo", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataSpot", dataSpot)
+		slog.Warn("Нет данных по споту", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataSpot", dataSpot)
 	}
 
 	//------ ФЬЮЧЕРСЫ
@@ -160,7 +160,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (shared.SymbolInfo, error) {
 		//найдем точность цены
 		result.LinearPricePrecision = convert.GetPrecisionFromString(result.LinearTickSize)
 	} else {
-		slog.Warn("Нет данных по фьючерсам", "fun", "GetSymbolInfo", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataLinear", dataLinear)
+		slog.Warn("Нет данных по фьючерсам", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataLinear", dataLinear)
 	}
 
 	//------ ОПЦТОНЫ
@@ -306,7 +306,7 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	result.KlineData = TOHLC
 	result.Time = convert.GetRoundedUTCTimeMs()
 
-	slog.Info("Получены данные kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "len(result.KlineData)", len(result.KlineData))
+	slog.Info("Получены данные kline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "len(result.KlineData)", len(result.KlineData))
 
 	return result, nil
 }
@@ -660,7 +660,6 @@ func (b *BybitClient) GetOptions(symbol string) ([]shared.OptionsData, error) {
 		return 0
 	})
 
-	// slog.Warn("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "result", result)
 	slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "len(result)", len(result))
 
 	return result, nil
