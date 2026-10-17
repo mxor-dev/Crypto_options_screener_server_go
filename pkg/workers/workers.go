@@ -71,7 +71,7 @@ func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
 		// }
 
 		//сделаем паузу между запросами
-		time.Sleep(exchange.Intervals.RestDataGetInterval)
+		time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
 	}
 }
 
@@ -138,7 +138,7 @@ func GetKlineDataInitial(pool *pgxpool.Pool, exchange *shared.Exchange, allKline
 	for i := range exchange.Symbols {
 
 		//если для символа есть отметка получении данных текущей категории
-		if slices.Contains(exchange.Symbols[i].Categories, category) {
+		if slices.Contains(exchange.Symbols[i].FetchFilter, category) {
 			//для каждого интервала
 			for _, interval := range *allKlineIntervals {
 
@@ -149,7 +149,7 @@ func GetKlineDataInitial(pool *pgxpool.Pool, exchange *shared.Exchange, allKline
 		}
 
 		//сделаем паузу между запросами
-		time.Sleep(exchange.Intervals.RestDataGetInterval)
+		time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
 	}
 }
 
@@ -198,14 +198,14 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 					for _, interval := range []string{"15m"} {
 
 						//если для символа стоит отметка получать данные spot
-						if slices.Contains(exchange.Symbols[i].Categories, "spot") {
+						if slices.Contains(exchange.Symbols[i].FetchFilter, "spot") {
 
 							//получим и сохраним в общий объект и бд данные kline
 							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "spot", interval, "1000")
 						}
 
 						//если для символа стоит отметка получать данные linear
-						if slices.Contains(exchange.Symbols[i].Categories, "linear") {
+						if slices.Contains(exchange.Symbols[i].FetchFilter, "linear") {
 
 							//получим и сохраним в общий объект и бд данные kline
 							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "linear", interval, "1000")
@@ -214,7 +214,7 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 					}
 
 					//сделаем паузу между запросами
-					time.Sleep(exchange.Intervals.RestDataGetInterval)
+					time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
 				}
 
 			}
@@ -228,14 +228,14 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 					for _, interval := range []string{"1h", "1D", "1W"} {
 
 						//если для символа стоит отметка получать данные spot
-						if slices.Contains(exchange.Symbols[i].Categories, "spot") {
+						if slices.Contains(exchange.Symbols[i].FetchFilter, "spot") {
 
 							//получим и сохраним в общий объект и бд данные kline
 							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "spot", interval, "1000")
 						}
 
 						//если для символа стоит отметка получать данные linear
-						if slices.Contains(exchange.Symbols[i].Categories, "linear") {
+						if slices.Contains(exchange.Symbols[i].FetchFilter, "linear") {
 
 							//получим и сохраним в общий объект и бд данные kline
 							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "linear", interval, "1000")
@@ -244,7 +244,7 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 					}
 
 					//сделаем паузу между запросами
-					time.Sleep(exchange.Intervals.RestDataGetInterval)
+					time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
 				}
 
 			}
@@ -293,7 +293,7 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 				for i := range exchange.Symbols {
 
 					//если для символа стоит отметка получать категорию опционы
-					if slices.Contains(exchange.Symbols[i].Categories, "option") {
+					if slices.Contains(exchange.Symbols[i].FetchFilter, "option") {
 						optionsData, err := exchange.Client.GetOptions(exchange.Symbols[i].Symbol)
 						if err != nil {
 							slog.Error("Ошибка при получении данных по опционам", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
@@ -531,7 +531,7 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 	for i := range exchange.Symbols {
 
 		//если для символа существует запиись получать данные из соответствующей категории
-		if category == "spot" && slices.Contains(exchange.Symbols[i].Categories, "spot") {
+		if category == "spot" && slices.Contains(exchange.Symbols[i].FetchFilter, "spot") {
 
 			//определим тип потока
 			streamType = "ws-spot-channel"
@@ -546,7 +546,7 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 		}
 
 		//если входящая категория linear и для символа стоит отметка получать данные linear
-		if category == "linear" && slices.Contains(exchange.Symbols[i].Categories, "linear") {
+		if category == "linear" && slices.Contains(exchange.Symbols[i].FetchFilter, "linear") {
 
 			//определим тип потока
 			streamType = "ws-linear-channel"

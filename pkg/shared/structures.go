@@ -9,17 +9,17 @@ import (
 
 // биржа
 type Exchange struct {
-	IsActive  bool
-	Name      string
-	Symbols   []Symbols
-	Intervals Intervals
-	Client    Client
+	IsActive       bool
+	Name           string
+	Symbols        []Symbols
+	FetchIntervals FetchIntervals
+	Client         Client
 }
 
 // символы
 type Symbols struct {
-	Symbol     string
-	Categories []string
+	Symbol      string
+	FetchFilter []string
 
 	Info InfoMu
 
@@ -33,7 +33,7 @@ type Symbols struct {
 }
 
 // интервалы запроса данных
-type Intervals struct {
+type FetchIntervals struct {
 	RestDataGetInterval    time.Duration
 	LinearDataGetInterval  time.Duration
 	OptionsDataGetInterval time.Duration
@@ -169,6 +169,15 @@ func (i *InfoMu) SaveInfo(symbolInfo SymbolInfo) {
 	i.Lock()
 	i.SymbolInfo = symbolInfo
 	i.Unlock()
+}
+
+// функция для получения данных
+func (i *InfoMu) GetInfo() SymbolInfo {
+	i.Lock()
+	result := i.SymbolInfo
+	i.Unlock()
+
+	return result
 }
 
 type SymbolInfo struct {

@@ -104,29 +104,29 @@ func main() {
 	//------ ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
 
 	//настройки для всех бирж
-	allExchnges := []shared.Exchange{
+	allExchanges := []shared.Exchange{
 		{
 			IsActive: true,
 			Name:     "bybit",
 			Symbols: []shared.Symbols{
-				{Symbol: "BTC", Categories: []string{"linear", "option"}},
-				{Symbol: "SPCX", Categories: []string{"linear", "option"}},
-				// {Symbol: "ETH", Categories: []string{"linear", "option"}},
-				// {Symbol: "SOL", Categories: []string{"linear", "option"}},
-				// {Symbol: "DOGE", Categories: []string{"linear", "option"}},
-				// {Symbol: "XRP", Categories: []string{"linear", "option"}},
-				// {Symbol: "MNT", Categories: []string{"linear", "option"}},
-				// {Symbol: "XAUT", Categories: []string{"linear", "option"}},
-				// {Symbol: "HYPE", Categories: []string{"linear", "option"}},
-				{Symbol: "NVDA", Categories: []string{"linear", "option"}},
-				// {Symbol: "SNDK", Categories: []string{"linear", "option"}},
-				// {Symbol: "QQQ", Categories: []string{"linear", "option"}},
-				// {Symbol: "SKHY", Categories: []string{"linear", "option"}},
-				// {Symbol: "MU", Categories: []string{"linear", "option"}},
-				// {Symbol: "TSLA", Categories: []string{"linear", "optios"}},
-				// {Symbol: "SOXL", Categories: []string{"linear", "option"}},
+				{Symbol: "BTC", FetchFilter: []string{"linear", "option"}},
+				{Symbol: "SPCX", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "ETH", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "SOL", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "DOGE", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "XRP", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "MNT", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "XAUT", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "HYPE", FetchFilter: []string{"linear", "option"}},
+				{Symbol: "NVDA", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "SNDK", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "QQQ", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "SKHY", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "MU", FetchFilter: []string{"linear", "option"}},
+				// {Symbol: "TSLA", FetchFilter: []string{"linear", "optios"}},
+				// {Symbol: "SOXL", FetchFilter: []string{"linear", "option"}},
 			},
-			Intervals: shared.Intervals{
+			FetchIntervals: shared.FetchIntervals{
 				RestDataGetInterval:    200 * time.Millisecond,
 				LinearDataGetInterval:  2 * time.Second,
 				OptionsDataGetInterval: 2 * time.Second,
@@ -145,7 +145,7 @@ func main() {
 	//------ ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ
 
 	//для каждой биржи
-	for _, exchange := range allExchnges {
+	for _, exchange := range allExchanges {
 
 		slog.Info("Состояние биржи", "Name", exchange.Name, "IsActive", exchange.IsActive)
 
@@ -202,8 +202,30 @@ func main() {
 	r := gin.New()
 
 	//главная страница
-	r.GET("/", func(c *gin.Context) {
-		c.String(200, "Hello World")
+	r.GET("/ping", func(c *gin.Context) {
+		c.String(200, "ok")
+	})
+	//информация по всем биржам и симолам
+	r.GET("/api/all_exchnges_info", func(c *gin.Context) {
+
+		//инициализируем ответ в виде хеш таблицы
+		exchangesData := make(map[string][]shared.SymbolInfo)
+
+		for i := range allExchanges {
+
+			//лакольные данные по символу
+			localSymbolsInfo := []shared.SymbolInfo{}
+
+			//для каждого символа
+			for j := range allExchanges[i].Symbols {
+				//запишем данные по символу
+				localSymbolsInfo = append(localSymbolsInfo, allExchanges[i].Symbols[j].Info.GetInfo())
+			}
+
+			//запишем в хеш таблицу имя биржи и данные по символам
+			exchangesData[allExchanges[i].Name] = localSymbolsInfo
+		}
+		c.JSON(200, exchangesData)
 	})
 
 	server := &http.Server{
