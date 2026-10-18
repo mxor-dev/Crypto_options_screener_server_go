@@ -30,7 +30,7 @@ type BybitClient struct {
 // ------- КОНСТРУКТОР
 func New(apiKey, apiSecret string) *BybitClient {
 	return &BybitClient{
-		ExchangeName: "bybit",
+		ExchangeName: "Bybit",
 		apiKey:       apiKey,
 		apiSecret:    apiSecret,
 	}

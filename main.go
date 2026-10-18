@@ -18,6 +18,7 @@ import (
 	"crypto_options_screener/pkg/shared"
 	"crypto_options_screener/pkg/workers"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -107,7 +108,7 @@ func main() {
 	allExchanges := []shared.Exchange{
 		{
 			IsActive: true,
-			Name:     "bybit",
+			Name:     "Bybit",
 			Symbols: []shared.Symbols{
 				{Symbol: "BTC", FetchFilter: []string{"linear", "option"}},
 				{Symbol: "SPCX", FetchFilter: []string{"linear", "option"}},
@@ -126,6 +127,16 @@ func main() {
 				// {Symbol: "TSLA", FetchFilter: []string{"linear", "optios"}},
 				// {Symbol: "SOXL", FetchFilter: []string{"linear", "option"}},
 			},
+			FetchIntervals: shared.FetchIntervals{
+				RestDataGetInterval:    200 * time.Millisecond,
+				LinearDataGetInterval:  2 * time.Second,
+				OptionsDataGetInterval: 2 * time.Second,
+			},
+		},
+		{
+			IsActive: true,
+			Name:     "Mexc",
+			Symbols:  []shared.Symbols{},
 			FetchIntervals: shared.FetchIntervals{
 				RestDataGetInterval:    200 * time.Millisecond,
 				LinearDataGetInterval:  2 * time.Second,
@@ -154,38 +165,45 @@ func main() {
 
 			//выберем имя биржи
 			switch exchange.Name {
-			case "bybit":
-
+			case "Bybit":
 				//создадим клиента
 				exchange.Client = bybit.New("public_data", "public_data")
 
 				slog.Info("Создан клиент для биржи", "exchangeName", exchange.Name)
+			case "Mexc":
+				slog.Info("Создание клиента для биржи будет реализовано позднее", "exchangeName", exchange.Name)
+			default:
+				slog.Warn("Неизвестная биржа", "exchangeName", exchange.Name)
 			}
 
-			//получим информацию для всех монет на бирже и сохраним в бд
-			workers.GetAllSymbolsInfo(pool, &exchange)
+			//если создан клинет для биржи
+			if exchange.Client != nil {
+				//запускаем воркеров
 
-			//получаем данные kline spot для всех монет, всех интервалов и сохраним в бд
-			workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "spot")
+				//получим информацию для всех монет на бирже и сохраним в бд
+				workers.GetAllSymbolsInfo(pool, &exchange)
 
-			//получаем данные kline linear для всех монет, всех интервалов и сохраним в бд
-			workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "linear")
+				//получаем данные kline spot для всех монет, всех интервалов и сохраним в бд
+				workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "spot")
 
-			//запускаем горутину воркера для получения обновления данных kline по таймеру
-			go workers.GetKlineDataTimer(ctx, pool, &exchange)
+				//получаем данные kline linear для всех монет, всех интервалов и сохраним в бд
+				workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "linear")
 
-			//запускаем воркера для получения последних свечей
-			go workers.GetKlineCandleLast(ctx, pool, &exchange, "linear")
+				//запускаем горутину воркера для получения обновления данных kline по таймеру
+				go workers.GetKlineDataTimer(ctx, pool, &exchange)
 
-			//запускаем воркера для получения данных по опционам по таймеру
-			go workers.GetOptionsDataTimer(ctx, pool, &exchange)
+				//запускаем воркера для получения последних свечей
+				go workers.GetKlineCandleLast(ctx, pool, &exchange, "linear")
 
-			//запуск воркера для сохранения данных
-			go workers.SaveSymbolDataToDbTimer(ctx, pool, &exchange)
+				//запускаем воркера для получения данных по опционам по таймеру
+				go workers.GetOptionsDataTimer(ctx, pool, &exchange)
 
-			//запуск воркера для получения статистики сервера
-			go workers.GetMemStatsTimer(ctx, &exchange)
+				//запуск воркера для сохранения данных
+				go workers.SaveSymbolDataToDbTimer(ctx, pool, &exchange)
 
+				//запуск воркера для получения статистики сервера
+				go workers.GetMemStatsTimer(ctx, &exchange)
+			}
 		}
 
 	}
@@ -201,6 +219,9 @@ func main() {
 	//создадим роутер
 	r := gin.New()
 
+	//разрешаем cors
+	r.Use(cors.Default())
+
 	//главная страница
 	r.GET("/ping", func(c *gin.Context) {
 		c.String(200, "ok")
@@ -208,22 +229,31 @@ func main() {
 	//информация по всем биржам и симолам
 	r.GET("/api/all_exchnges_info", func(c *gin.Context) {
 
+		//локальный тип для ExchangeInfo - в него может быть придется положить еще что то
+		type LocalExchangeInfo struct {
+			AllSymbolsInfo map[string]shared.SymbolInfo
+		}
+
 		//инициализируем ответ в виде хеш таблицы
-		exchangesData := make(map[string][]shared.SymbolInfo)
+		exchangesData := make(map[string]LocalExchangeInfo)
 
 		for i := range allExchanges {
 
 			//лакольные данные по символу
-			localSymbolsInfo := []shared.SymbolInfo{}
+			localAllSymbolsInfo := make(map[string]shared.SymbolInfo)
 
 			//для каждого символа
 			for j := range allExchanges[i].Symbols {
-				//запишем данные по символу
-				localSymbolsInfo = append(localSymbolsInfo, allExchanges[i].Symbols[j].Info.GetInfo())
+				//запишем данные по символу в хеш таблицу
+				localAllSymbolsInfo[allExchanges[i].Symbols[j].Symbol] = allExchanges[i].Symbols[j].Info.GetInfo()
 			}
 
-			//запишем в хеш таблицу имя биржи и данные по символам
-			exchangesData[allExchanges[i].Name] = localSymbolsInfo
+			//создадим экземпляр
+			var exchangeInfo LocalExchangeInfo
+			exchangeInfo.AllSymbolsInfo = localAllSymbolsInfo
+
+			//запишем в хеш таблицу биржи хеш таблицу с данные по символам
+			exchangesData[allExchanges[i].Name] = exchangeInfo
 		}
 		c.JSON(200, exchangesData)
 	})
