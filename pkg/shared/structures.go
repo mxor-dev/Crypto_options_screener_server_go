@@ -29,24 +29,42 @@ type AllSymbols struct {
 	OptionsData []OptionsData
 }
 
-// интервалы запроса данных
-type FetchIntervals struct {
-	RestDataGetInterval    time.Duration
-	LinearDataGetInterval  time.Duration
-	OptionsDataGetInterval time.Duration
+type InfoMu struct {
+	SymbolInfo SymbolInfo
+	sync.Mutex
 }
 
-type KlineData struct {
+// функция для сохранения данных
+func (i *InfoMu) SaveInfo(symbolInfo SymbolInfo) {
+	i.Lock()
+	i.SymbolInfo = symbolInfo
+	i.Unlock()
+}
+
+// функция для получения данных
+func (i *InfoMu) GetInfo() SymbolInfo {
+	i.Lock()
+	result := i.SymbolInfo
+	i.Unlock()
+
+	return result
+}
+
+type SymbolInfo struct {
 	ExchangeName string
 	Symbol       string
-	Category     string
 
-	KlineInterval string
+	SpotMinOrderQty    string
+	SpotTickSize       string
+	SpotPricePrecision string
 
-	KlineData  [][]string //массив формат TOHLC
-	LastCandle []string   //одна свечка формат TOHLC
+	LinearMinOrderQty    string
+	LinearTickSize       string
+	LinearPricePrecision string
 
-	Time int64
+	OptionMinOrderQty    string
+	OptionTickSize       string
+	OptionPricePrecision string
 }
 
 type KlineDataMu struct {
@@ -81,7 +99,7 @@ func (k *KlineDataMu) GetKlineLastCandle() []string {
 
 	k.Lock()
 	//возьмем последнюю свечку
-	result := k.KlineData.KlineData[len(k.KlineData.KlineData)-1]
+	result := k.KlineData.LastCandle
 	k.Unlock()
 
 	return result
@@ -140,53 +158,43 @@ func (k *KlineDataMu) UpdateKlineLastCandle(lastPrice string) {
 func (k *KlineDataMu) GetKlineLastCandleClosePrice() string {
 
 	k.Lock()
-	result := k.KlineData.KlineData[len(k.KlineData.KlineData)-1][4] //свечка в формате TOHLC
+	result := k.KlineData.Klines[len(k.KlineData.Klines)-1][4] //свечка в формате TOHLC
 	k.Unlock()
 
 	return result
 }
 
-type InfoMu struct {
-	SymbolInfo SymbolInfo
-	sync.Mutex
-}
-
-// функция для сохранения данных
-func (i *InfoMu) SaveInfo(symbolInfo SymbolInfo) {
-	i.Lock()
-	i.SymbolInfo = symbolInfo
-	i.Unlock()
-}
-
-// функция для получения данных
-func (i *InfoMu) GetInfo() SymbolInfo {
-	i.Lock()
-	result := i.SymbolInfo
-	i.Unlock()
-
-	return result
-}
-
-type SymbolInfo struct {
+type KlineData struct {
 	ExchangeName string
 	Symbol       string
+	Category     string
 
-	SpotMinOrderQty    string
-	SpotTickSize       string
-	SpotPricePrecision string
+	KlineInterval string
 
-	LinearMinOrderQty    string
-	LinearTickSize       string
-	LinearPricePrecision string
+	Klines     [][]string //массив формат TOHLC
+	LastCandle []string   //одна свечка формат TOHLC
 
-	OptionMinOrderQty    string
-	OptionTickSize       string
-	OptionPricePrecision string
+	Time int64
 }
 
-type LastPriceResponse struct {
-	Symbol    string
-	LastPrice string
+// интервалы запроса данных
+type FetchIntervals struct {
+	RestDataGetInterval    time.Duration
+	LinearDataGetInterval  time.Duration
+	OptionsDataGetInterval time.Duration
+}
+
+type SymbolData struct {
+	ExchangeName    string
+	Symbol          string
+	LastPriceSpot   string
+	LastPriceLinear string
+	LinearData      []LinearData
+	OptionsData     []OptionsData
+	TimeMs          string
+}
+
+type LinearData struct {
 }
 
 type OptionsData struct {
@@ -229,15 +237,7 @@ type OptionsLines struct {
 	MarkIv []string
 }
 
-type SymbolData struct {
-	ExchangeName    string
-	Symbol          string
-	LastPriceSpot   string
-	LastPriceLinear string
-	LinearData      []LinearData
-	OptionsData     []OptionsData
-	TimeMs          string
-}
-
-type LinearData struct {
+type LastPriceResponse struct {
+	Symbol    string
+	LastPrice string
 }

@@ -282,7 +282,7 @@ func main() {
 		type KlineRequest struct {
 			Exchange      string `json:"exchange"`
 			Symbol        string `json:"symbol"`
-			Type          string `json:"type"`
+			Category      string `json:"category"`
 			KlineInterval string `json:"kline_interval"`
 		}
 
@@ -301,12 +301,21 @@ func main() {
 
 		slog.Debug("Получен запрос POST", "url", "/api/kline_data", "req", req)
 
-		//ответ сервера
+		var data shared.KlineData
+
+		switch req.Category {
+		case "spot":
+			//получим массив свечей
+			data = AllExchanges[req.Exchange].AllSymbols[req.Symbol].KlineSpot[req.KlineInterval].LoadKlineData()
+		case "linear":
+			//получим массив свечей
+			data = AllExchanges[req.Exchange].AllSymbols[req.Symbol].KlineLinear[req.KlineInterval].LoadKlineData()
+		}
+
+		//дадим ответ
 		c.JSON(http.StatusOK, gin.H{
-			"status":   "success",
-			"symbol":   req.Symbol,
-			"interval": req.KlineInterval,
-			"data":     AllExchanges[req.Exchange].AllSymbols[req.Symbol].KlineLinear,
+			"status": "success",
+			"data":   data,
 		})
 
 	})

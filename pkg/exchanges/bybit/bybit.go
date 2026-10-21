@@ -225,7 +225,7 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 		Category:      category,
 		KlineInterval: klineInterval,
 
-		KlineData:  [][]string{},
+		Klines:     [][]string{},
 		LastCandle: []string{},
 
 		Time: 0,
@@ -304,11 +304,11 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	slices.Reverse(TOHLC)
 
 	//запишем полученные поля в result
-	result.KlineData = TOHLC
+	result.Klines = TOHLC
 	result.LastCandle = TOHLC[len(TOHLC)-1]
 	result.Time = convert.GetRoundedUTCTimeMs()
 
-	slog.Info("Получены данные kline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "len(result.KlineData)", len(result.KlineData))
+	slog.Info("Получены данные kline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "len(result.KlineData)", len(result.Klines))
 
 	return result, nil
 }

@@ -86,8 +86,8 @@ func GetKlineData(pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, 
 	}
 
 	//если длина массива данных нулевая
-	if len(klineData.KlineData) == 0 {
-		slog.Warn("Длина данных len(klineData.KlineData) == 0", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol)
+	if len(klineData.Klines) == 0 {
+		slog.Warn("Длина данных len(klineData.Klines) == 0", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol)
 		return
 	}
 
