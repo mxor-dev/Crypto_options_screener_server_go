@@ -95,34 +95,12 @@ func GetKlineData(pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, 
 	switch category {
 	case "spot":
 
-		//если хеш таблица нулевая создадим ее
-		if exchange.AllSymbols[symbol].KlineSpot == nil {
-			exchange.AllSymbols[symbol].KlineSpot = make(map[string]*shared.KlineDataMu)
-		}
-
-		//если записи для данного интервала не существует
-		if exchange.AllSymbols[symbol].KlineSpot[interval] == nil {
-			//создадим запись
-			exchange.AllSymbols[symbol].KlineSpot[interval] = &shared.KlineDataMu{}
-		}
-
 		//запишем данные kline
 		exchange.AllSymbols[symbol].KlineSpot[interval].SaveKlineData(klineData)
 
 		// slog.Debug("Данные KlineSpot обнолены", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol, "interval", interval, "data", exchange.AllSymbols[symbol].KlineSpot[interval])
 
 	case "linear":
-
-		//если хеш таблица нулевая создадим ее
-		if exchange.AllSymbols[symbol].KlineLinear == nil {
-			exchange.AllSymbols[symbol].KlineLinear = make(map[string]*shared.KlineDataMu)
-		}
-
-		//если записи для данного интервала не существует
-		if exchange.AllSymbols[symbol].KlineLinear[interval] == nil {
-			//создадим запись
-			exchange.AllSymbols[symbol].KlineLinear[interval] = &shared.KlineDataMu{}
-		}
 
 		//запишем данные kline
 		exchange.AllSymbols[symbol].KlineLinear[interval].SaveKlineData(klineData)

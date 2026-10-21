@@ -153,6 +153,24 @@ func main() {
 		"1W",
 	}
 
+	//для каждой биржи заполним nil map
+	for _, exchangeVal := range AllExchanges {
+		//для каждого символа
+		for _, symbolVal := range exchangeVal.AllSymbols {
+
+			//создадим хеш таблицы для хранения kline
+			symbolVal.KlineSpot = map[string]*shared.KlineDataMu{}
+			symbolVal.KlineLinear = map[string]*shared.KlineDataMu{}
+
+			//для каждого интервала
+			for i := range allKlineIntervals {
+				//создадим пустую запись в хеш таблице
+				symbolVal.KlineSpot[allKlineIntervals[i]] = &shared.KlineDataMu{}
+				symbolVal.KlineLinear[allKlineIntervals[i]] = &shared.KlineDataMu{}
+			}
+		}
+	}
+
 	//------ ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ
 
 	//для каждой биржи
@@ -283,13 +301,12 @@ func main() {
 
 		slog.Debug("Получен запрос POST", "url", "/api/kline_data", "req", req)
 
-		
 		//ответ сервера
 		c.JSON(http.StatusOK, gin.H{
-			"status":  "success",
-			"symbol":  req.Symbol,
+			"status":   "success",
+			"symbol":   req.Symbol,
 			"interval": req.KlineInterval,
-			"data":    AllExchanges[req.Exchange].AllSymbols[req.Symbol].KlineLinear,
+			"data":     AllExchanges[req.Exchange].AllSymbols[req.Symbol].KlineLinear,
 		})
 
 	})
