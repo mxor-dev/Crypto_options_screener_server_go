@@ -283,13 +283,14 @@ func main() {
 
 		slog.Debug("Получен запрос POST", "url", "/api/kline_data", "req", req)
 
-		// //ответ сервера
-		// c.JSON(http.StatusOK, gin.H{
-		// 	"status":  "success",
-		// 	"symbol":  req.Symbol,
-		// 	"interval": req.KlineInterval,
-		// 	"data":    AllExchanges
-		// })
+		
+		//ответ сервера
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "success",
+			"symbol":  req.Symbol,
+			"interval": req.KlineInterval,
+			"data":    AllExchanges[req.Exchange].AllSymbols[req.Symbol].KlineLinear,
+		})
 
 	})
 

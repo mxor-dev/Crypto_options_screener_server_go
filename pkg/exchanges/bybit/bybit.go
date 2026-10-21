@@ -220,14 +220,15 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	// slog.Info("Запрос данных kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval)
 
 	result := shared.KlineData{
-		ExchangeName: b.ExchangeName,
-		Symbol:       symbol,
-
+		ExchangeName:  b.ExchangeName,
+		Symbol:        symbol,
 		Category:      category,
 		KlineInterval: klineInterval,
 
-		KlineData: [][]string{},
-		Time:      0,
+		KlineData:  [][]string{},
+		LastCandle: []string{},
+
+		Time: 0,
 	}
 
 	//массив для конвертации интервала
@@ -304,6 +305,7 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 
 	//запишем полученные поля в result
 	result.KlineData = TOHLC
+	result.LastCandle = TOHLC[len(TOHLC)-1]
 	result.Time = convert.GetRoundedUTCTimeMs()
 
 	slog.Info("Получены данные kline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "len(result.KlineData)", len(result.KlineData))

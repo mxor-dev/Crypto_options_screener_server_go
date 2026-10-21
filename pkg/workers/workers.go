@@ -87,26 +87,7 @@ func GetKlineData(pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, 
 
 	//если длина массива данных нулевая
 	if len(klineData.KlineData) == 0 {
-		slog.Warn("Длина данных len(klineData.KlineData) == 0", "fun", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol, "err", err)
-		return
-	}
-
-	//указатель на структуру данных с текущим симолом
-	var symbolData *shared.AllSymbols
-
-	//найдем данные по нашему символу
-	for symbolKey, symbolVal := range exchange.AllSymbols {
-		//ели это наш символ
-		if symbolKey == symbol {
-			//получим указатель
-			symbolData = symbolVal
-			break
-		}
-	}
-
-	//если символ не найден
-	if symbolData == nil {
-		slog.Error("Ошибка: символ не найден в структуре exchange", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol, "err", err)
+		slog.Warn("Длина данных len(klineData.KlineData) == 0", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol)
 		return
 	}
 
@@ -114,19 +95,39 @@ func GetKlineData(pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, 
 	switch category {
 	case "spot":
 
-		//запишем данные kline
-		symbolData.KlineSpot.SaveKlineData(klineData)
+		//если хеш таблица нулевая создадим ее
+		if exchange.AllSymbols[symbol].KlineSpot == nil {
+			exchange.AllSymbols[symbol].KlineSpot = make(map[string]*shared.KlineDataMu)
+		}
 
-		//запишем последнюю свечку
-		symbolData.LastCandleSpot.SaveKlineLastCandle(klineData.KlineData[len(klineData.KlineData)-1])
+		//если записи для данного интервала не существует
+		if exchange.AllSymbols[symbol].KlineSpot[interval] == nil {
+			//создадим запись
+			exchange.AllSymbols[symbol].KlineSpot[interval] = &shared.KlineDataMu{}
+		}
+
+		//запишем данные kline
+		exchange.AllSymbols[symbol].KlineSpot[interval].SaveKlineData(klineData)
+
+		// slog.Debug("Данные KlineSpot обнолены", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol, "interval", interval, "data", exchange.AllSymbols[symbol].KlineSpot[interval])
 
 	case "linear":
+
+		//если хеш таблица нулевая создадим ее
+		if exchange.AllSymbols[symbol].KlineLinear == nil {
+			exchange.AllSymbols[symbol].KlineLinear = make(map[string]*shared.KlineDataMu)
+		}
+
+		//если записи для данного интервала не существует
+		if exchange.AllSymbols[symbol].KlineLinear[interval] == nil {
+			//создадим запись
+			exchange.AllSymbols[symbol].KlineLinear[interval] = &shared.KlineDataMu{}
+		}
+
 		//запишем данные kline
-		symbolData.KlineLinear.SaveKlineData(klineData)
+		exchange.AllSymbols[symbol].KlineLinear[interval].SaveKlineData(klineData)
 
-		//запишем последнюю свечку
-		symbolData.LastCandleLinear.SaveKlineLastCandle(klineData.KlineData[len(klineData.KlineData)-1])
-
+		// slog.Debug("Данные KlineLinear обнолены", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol, "interval", interval, "data", exchange.AllSymbols[symbol].KlineLinear[interval])
 	}
 
 }
@@ -586,20 +587,27 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 				// slog.Debug("Получены данные lastPrice", "exchangeName", exchange.ExchangeName, "symbol", data.Symbol, "LastPrice", data.LastPrice)
 
 				//получим последнюю цену по символу
-				for i := range exchange.AllSymbols {
+				for symbolKey, symbolVal := range exchange.AllSymbols {
 
 					//если это данные по текущему символу
-					if exchange.AllSymbols[i].Symbol+"USDT" == data.Symbol {
+					if symbolKey+"USDT" == data.Symbol {
 
 						if streamType == "ws-spot-channel" {
 
-							//обновим свечку
-							exchange.AllSymbols[i].LastCandleSpot.UpdateKlineLastCandle(data.LastPrice)
+							//для каждого интервала данных kline
+							for _, intervalVal := range symbolVal.KlineSpot {
+								//обновим последнюю свечку
+								intervalVal.UpdateKlineLastCandle(data.LastPrice)
+							}
+
 						}
 						if streamType == "ws-linear-channel" {
 
-							//обновим свечку
-							exchange.AllSymbols[i].LastCandleLinear.UpdateKlineLastCandle(data.LastPrice)
+							//для каждого интервала данных kline
+							for _, intervalVal := range symbolVal.KlineLinear {
+								//обновим последнюю свечку
+								intervalVal.UpdateKlineLastCandle(data.LastPrice)
+							}
 
 							// slog.Warn("Обновленная lastCandle",  "exchangeName", exchange.ExchangeName, "symbol", data.Symbol, "streamType", streamType, "lastCandle", exchange.AllSymbols[i].LastCandleLinear.GetKlineLastCandle())
 
@@ -651,7 +659,7 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 			if minutes%15 == 0 && seconds == 10 {
 
 				//для каждого символа - через индекс потому что внутри мьютексы
-				for i := range exchange.AllSymbols {
+				for symbolKey, symbolVal := range exchange.AllSymbols {
 
 					//сдвигаем время на 15 минут назад
 					fifteenMinutesAgo := now.Add(-15 * time.Minute)
@@ -659,21 +667,32 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 					//получаем миллисекунды (тип int64)
 					timeMs := fifteenMinutesAgo.UnixMilli()
 
+					//последняя цена спота
+					lastPriceSpot := "0"
+					if symbolVal.KlineSpot["15m"] != nil {
+						lastPriceSpot = symbolVal.KlineSpot["15m"].GetKlineLastCandleClosePrice()
+					}
+					//последняя цена фьючерса
+					lastPriceLinear := "0"
+					if symbolVal.KlineLinear["15m"] != nil {
+						lastPriceLinear = symbolVal.KlineLinear["15m"].GetKlineLastCandleClosePrice()
+					}
+
 					//сформируем объект для записи
 					symbolData := shared.SymbolData{
 						ExchangeName:    exchange.ExchangeName,
-						Symbol:          exchange.AllSymbols[i].Symbol,
-						LastPriceSpot:   exchange.AllSymbols[i].LastCandleSpot.GetKlineLastCandleClosePrice(),
-						LastPriceLinear: exchange.AllSymbols[i].LastCandleSpot.GetKlineLastCandleClosePrice(),
+						Symbol:          symbolVal.Symbol,
+						LastPriceSpot:   lastPriceSpot,
+						LastPriceLinear: lastPriceLinear,
 						LinearData:      []shared.LinearData{},
-						OptionsData:     exchange.AllSymbols[i].OptionsData,
+						OptionsData:     symbolVal.OptionsData,
 						TimeMs:          strconv.FormatInt(timeMs, 10),
 					}
 
 					// 4. Обязательно переводим структуру Go в JSON-строку перед отправкой в БД
 					jsonData, err := json.Marshal(symbolData)
 					if err != nil {
-						slog.Error("Ошибка при создании json из symbolData", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "err", err)
+						slog.Error("Ошибка при создании json из symbolData", "exchangeName", exchange.ExchangeName, "symbol", symbolKey, "err", err)
 						return
 					}
 
@@ -688,13 +707,13 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 					defer cancel()
 
 					// Выполняем запрос через пул соединений
-					_, err = pool.Exec(dbCtx, query, exchange.ExchangeName, exchange.AllSymbols[i].Symbol, string(jsonData), timeMs)
+					_, err = pool.Exec(dbCtx, query, exchange.ExchangeName, symbolKey, string(jsonData), timeMs)
 					if err != nil {
-						slog.Error("Ошибка при сохранении SymbolData", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "timeMs", timeMs, "err", err)
+						slog.Error("Ошибка при сохранении SymbolData", "exchangeName", exchange.ExchangeName, "symbol", symbolKey, "timeMs", timeMs, "err", err)
 						return
 					}
 
-					slog.Info("Данные SymbolData сохранены в бд", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "timeMs", timeMs)
+					slog.Info("Данные SymbolData сохранены в бд", "exchangeName", exchange.ExchangeName, "symbol", symbolKey, "timeMs", timeMs)
 				}
 			}
 

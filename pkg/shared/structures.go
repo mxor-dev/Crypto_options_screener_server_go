@@ -23,11 +23,8 @@ type AllSymbols struct {
 
 	Info InfoMu
 
-	KlineSpot   KlineDataMu
-	KlineLinear KlineDataMu
-
-	LastCandleSpot   KlineLastCandleMu
-	LastCandleLinear KlineLastCandleMu
+	KlineSpot   map[string]*KlineDataMu
+	KlineLinear map[string]*KlineDataMu
 
 	OptionsData []OptionsData
 }
@@ -38,12 +35,26 @@ type FetchIntervals struct {
 	LinearDataGetInterval  time.Duration
 	OptionsDataGetInterval time.Duration
 }
+
+type KlineData struct {
+	ExchangeName string
+	Symbol       string
+	Category     string
+
+	KlineInterval string
+
+	KlineData  [][]string //массив формат TOHLC
+	LastCandle []string   //одна свечка формат TOHLC
+
+	Time int64
+}
+
 type KlineDataMu struct {
 	KlineData KlineData
 	sync.Mutex
 }
 
-// функция для сохранения данных
+// функция для сохранения данных kline
 func (k *KlineDataMu) SaveKlineData(klineData KlineData) {
 	//запишем данные kline
 	k.Lock()
@@ -53,77 +64,53 @@ func (k *KlineDataMu) SaveKlineData(klineData KlineData) {
 	// slog.Warn("Двнные KlineData сохранены", "klineData", klineData)
 }
 
-type KlineData struct {
-	ExchangeName string
-	Symbol       string
+// функция для получения данных kline
+func (k *KlineDataMu) LoadKlineData() KlineData {
 
-	Category      string
-	KlineInterval string
-
-	KlineData [][]string //формат TOHLC
-	Time      int64
-}
-
-type KlineLastCandleMu struct {
-	Time  string
-	Open  string
-	Hight string
-	Low   string
-	Close string
-
-	sync.Mutex
-}
-
-// функция для сохранения данных
-func (k *KlineLastCandleMu) SaveKlineLastCandle(lastCandle []string) {
 	//запишем данные kline
 	k.Lock()
-	k.Time = lastCandle[0]
-	k.Open = lastCandle[1]
-	k.Hight = lastCandle[2]
-	k.Low = lastCandle[3]
-	k.Close = lastCandle[4]
+	result := k.KlineData
 	k.Unlock()
 
-	// slog.Warn("Данные lastCandle сохранены", "lastCandle", lastCandle)
+	// slog.Warn("Двнные KlineData сохранены", "klineData", klineData)
+	return result
 }
 
-// функция для получения данных
-func (k *KlineLastCandleMu) GetKlineLastCandle() []string {
+// функция для получения последней свечи
+func (k *KlineDataMu) GetKlineLastCandle() []string {
 
-	var result []string
-
-	//запишем данные kline
 	k.Lock()
-	result = append(result, k.Time)
-	result = append(result, k.Open)
-	result = append(result, k.Hight)
-	result = append(result, k.Low)
-	result = append(result, k.Close)
+	//возьмем последнюю свечку
+	result := k.KlineData.KlineData[len(k.KlineData.KlineData)-1]
 	k.Unlock()
 
 	return result
 }
 
 // функция для обновления свечи
-func (k *KlineLastCandleMu) UpdateKlineLastCandle(lastPrice string) {
+func (k *KlineDataMu) UpdateKlineLastCandle(lastPrice string) {
 
 	k.Lock()
+
+	//выделим нужное из свечки TOHLC
+	high := k.KlineData.LastCandle[2]
+	low := k.KlineData.LastCandle[3]
+	close := k.KlineData.LastCandle[4]
 
 	// slog.Warn("Текущая lastCandle", "klineData", k)
 
 	//конвертикуем последнюю цену в число
-	lastPriceFloat, err := strconv.ParseFloat(lastPrice, 64)
+	lastPriceFloat, err := strconv.ParseFloat(close, 64)
 	if err != nil {
 		slog.Error("Ошибка конвертации строки во float64", "func", "UpdateKlineLastCandle", "error", err)
 	}
-	//конвертикуем текйщий лоу в число
-	currHightFloat, err := strconv.ParseFloat(k.Hight, 64)
+	//конвертикуем текущий хай в число
+	currHightFloat, err := strconv.ParseFloat(high, 64)
 	if err != nil {
 		slog.Error("Ошибка конвертации строки во float64", "func", "UpdateKlineLastCandle", "error", err)
 	}
 	//конвертикуем текущий лоу в число
-	cyrrLowFloat, err := strconv.ParseFloat(k.Low, 64)
+	cyrrLowFloat, err := strconv.ParseFloat(low, 64)
 	if err != nil {
 		slog.Error("Ошибка конвертации строки во float64", "func", "UpdateKlineLastCandle", "error", err)
 	}
@@ -131,17 +118,17 @@ func (k *KlineLastCandleMu) UpdateKlineLastCandle(lastPrice string) {
 	//если последняя цена больше текущего хай
 	if lastPriceFloat > currHightFloat {
 		//заменим текущий хай
-		k.Hight = lastPrice
+		k.KlineData.LastCandle[2] = lastPrice
 	}
 
 	//если последняя цена меньше текущего лоу
 	if lastPriceFloat > cyrrLowFloat {
 		//заменим текущий лоу
-		k.Low = lastPrice
+		k.KlineData.LastCandle[3] = lastPrice
 	}
 
 	//обновим цену закрытия
-	k.Close = lastPrice
+	k.KlineData.LastCandle[4] = lastPrice
 
 	// slog.Warn("Обновленная lastCandle", "klineData", k)
 
@@ -149,11 +136,11 @@ func (k *KlineLastCandleMu) UpdateKlineLastCandle(lastPrice string) {
 
 }
 
-// функция для обновления свечи
-func (k *KlineLastCandleMu) GetKlineLastCandleClosePrice() string {
+// функция для получения последней цены закрытия
+func (k *KlineDataMu) GetKlineLastCandleClosePrice() string {
 
 	k.Lock()
-	result := k.Close
+	result := k.KlineData.KlineData[len(k.KlineData.KlineData)-1][4] //свечка в формате TOHLC
 	k.Unlock()
 
 	return result
