@@ -21,18 +21,18 @@ import (
 func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
 
 	//для каждого символа для текущей биржи
-	for i := range exchange.Symbols {
+	for symbolKey, symbolVal := range exchange.AllSymbols {
 
 		//получим данные для текущей монетки
-		symbolInfo, err := exchange.Client.GetSymbolInfo(exchange.Symbols[i].Symbol)
+		symbolInfo, err := exchange.Client.GetSymbolInfo(symbolKey)
 		if err != nil {
-			slog.Error("Ошибка при получении", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol)
+			slog.Error("Ошибка при получении", "exchangeName", exchange.ExchangeName, "symbol", symbolKey)
 		}
 
-		slog.Info("Получены данные SymbolInfo", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "symbolInfo", symbolInfo)
+		slog.Info("Получены данные SymbolInfo", "exchangeName", exchange.ExchangeName, "symbol", symbolKey, "symbolInfo", symbolInfo)
 
 		//запишем данные в общую структуру
-		exchange.Symbols[i].Info.SaveInfo(symbolInfo)
+		symbolVal.Info.SaveInfo(symbolInfo)
 
 		//запишем данные в бд
 		// query := `
@@ -67,7 +67,7 @@ func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
 		// 	symbolInfo.OptionTickSize,
 		// )
 		// if err != nil {
-		// 	slog.Error("Ошибка при сохранении данных в БД", "func", "GetAllSymbolsInfo", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol)
+		// 	slog.Error("Ошибка при сохранении данных в БД", "func", "GetAllSymbolsInfo", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol)
 		// }
 
 		//сделаем паузу между запросами
@@ -81,32 +81,32 @@ func GetKlineData(pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, 
 	//получим данные
 	klineData, err := exchange.Client.GetKline(symbol, category, interval, "1000")
 	if err != nil {
-		slog.Error("Ошибка при получении kline", "exchangeName", exchange.Name, "category", category, "symbol", symbol, "err", err)
+		slog.Error("Ошибка при получении kline", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol, "err", err)
 		return
 	}
 
 	//если длина массива данных нулевая
 	if len(klineData.KlineData) == 0 {
-		slog.Warn("Длина данных len(klineData.KlineData) == 0", "fun", "exchangeName", exchange.Name, "category", category, "symbol", symbol, "err", err)
+		slog.Warn("Длина данных len(klineData.KlineData) == 0", "fun", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol, "err", err)
 		return
 	}
 
 	//указатель на структуру данных с текущим симолом
-	var symbolData *shared.Symbols
+	var symbolData *shared.AllSymbols
 
 	//найдем данные по нашему символу
-	for i := range exchange.Symbols {
+	for symbolKey, symbolVal := range exchange.AllSymbols {
 		//ели это наш символ
-		if exchange.Symbols[i].Symbol == symbol {
+		if symbolKey == symbol {
 			//получим указатель
-			symbolData = &exchange.Symbols[i]
+			symbolData = symbolVal
 			break
 		}
 	}
 
 	//если символ не найден
 	if symbolData == nil {
-		slog.Error("Ошибка: символ не найден в структуре exchange", "exchangeName", exchange.Name, "category", category, "symbol", symbol, "err", err)
+		slog.Error("Ошибка: символ не найден в структуре exchange", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol, "err", err)
 		return
 	}
 
@@ -135,15 +135,15 @@ func GetKlineData(pool *pgxpool.Pool, exchange *shared.Exchange, symbol string, 
 func GetKlineDataInitial(pool *pgxpool.Pool, exchange *shared.Exchange, allKlineIntervals *[]string, category string) {
 
 	//для каждого символа для текущей биржи
-	for i := range exchange.Symbols {
+	for i := range exchange.AllSymbols {
 
 		//если для символа есть отметка получении данных текущей категории
-		if slices.Contains(exchange.Symbols[i].FetchFilter, category) {
+		if slices.Contains(exchange.AllSymbols[i].FetchFilter, category) {
 			//для каждого интервала
 			for _, interval := range *allKlineIntervals {
 
 				//получим данные и сохраним их
-				GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, category, interval, "1000")
+				GetKlineData(pool, exchange, exchange.AllSymbols[i].Symbol, category, interval, "1000")
 
 			}
 		}
@@ -158,13 +158,13 @@ func GetKlineDataInitial(pool *pgxpool.Pool, exchange *shared.Exchange, allKline
 // получает данные с определенным интервалом и записывает их в бд
 func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
-	slog.Info("Запуск воркера", "exchangeName", exchange.Name)
+	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
 	//создадим тикер который каждые 1 секунду будет срабатывать
 	ticker := time.NewTicker(1 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер остановлен", "exchangeName", exchange.Name)
+		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
 	}()
 
 	//переменная для остановке
@@ -192,23 +192,23 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 			if (minutes%15 == 0) && seconds == 10 {
 
 				//для каждого символа для текущей биржи
-				for i := range exchange.Symbols {
+				for i := range exchange.AllSymbols {
 
 					//для каждого интервала
 					for _, interval := range []string{"15m"} {
 
 						//если для символа стоит отметка получать данные spot
-						if slices.Contains(exchange.Symbols[i].FetchFilter, "spot") {
+						if slices.Contains(exchange.AllSymbols[i].FetchFilter, "spot") {
 
 							//получим и сохраним в общий объект и бд данные kline
-							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "spot", interval, "1000")
+							GetKlineData(pool, exchange, exchange.AllSymbols[i].Symbol, "spot", interval, "1000")
 						}
 
 						//если для символа стоит отметка получать данные linear
-						if slices.Contains(exchange.Symbols[i].FetchFilter, "linear") {
+						if slices.Contains(exchange.AllSymbols[i].FetchFilter, "linear") {
 
 							//получим и сохраним в общий объект и бд данные kline
-							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "linear", interval, "1000")
+							GetKlineData(pool, exchange, exchange.AllSymbols[i].Symbol, "linear", interval, "1000")
 						}
 
 					}
@@ -222,23 +222,23 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 			if minutes == 0 && seconds == 10 {
 
 				//для каждого символа для текущей биржи
-				for i := range exchange.Symbols {
+				for i := range exchange.AllSymbols {
 
 					//для каждого интервала
 					for _, interval := range []string{"1h", "1D", "1W"} {
 
 						//если для символа стоит отметка получать данные spot
-						if slices.Contains(exchange.Symbols[i].FetchFilter, "spot") {
+						if slices.Contains(exchange.AllSymbols[i].FetchFilter, "spot") {
 
 							//получим и сохраним в общий объект и бд данные kline
-							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "spot", interval, "1000")
+							GetKlineData(pool, exchange, exchange.AllSymbols[i].Symbol, "spot", interval, "1000")
 						}
 
 						//если для символа стоит отметка получать данные linear
-						if slices.Contains(exchange.Symbols[i].FetchFilter, "linear") {
+						if slices.Contains(exchange.AllSymbols[i].FetchFilter, "linear") {
 
 							//получим и сохраним в общий объект и бд данные kline
-							GetKlineData(pool, exchange, exchange.Symbols[i].Symbol, "linear", interval, "1000")
+							GetKlineData(pool, exchange, exchange.AllSymbols[i].Symbol, "linear", interval, "1000")
 						}
 
 					}
@@ -252,7 +252,7 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 		//если работа программы остановлены
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
-			slog.Info("Воркер остановлен", "exchangeName", exchange.Name)
+			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
 			return
 		}
 	}
@@ -261,13 +261,13 @@ func GetKlineDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared
 // воркер для получения данных по опционам по таймеру
 func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
-	slog.Info("Запуск воркера", "exchangeName", exchange.Name)
+	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
 	//создадим тикер который будет срабатывать каждые 1 секунду
 	ticker := time.NewTicker(1 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер остановлен", "exchangeName", exchange.Name)
+		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
 	}()
 
 	for {
@@ -287,20 +287,20 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 			// на каждой пятой секунде
 			if seconds%5 == 0 {
 
-				// slog.Warn("Сработал тикер", "func", "GetOptionsDataTimer", "exchangeName", exchange.Name)
+				// slog.Warn("Сработал тикер", "func", "GetOptionsDataTimer", "exchangeName", exchange.ExchangeName)
 
 				//для каждого символа - через индекс потому что внутри мьютексы
-				for i := range exchange.Symbols {
+				for i := range exchange.AllSymbols {
 
 					//если для символа стоит отметка получать категорию опционы
-					if slices.Contains(exchange.Symbols[i].FetchFilter, "option") {
-						optionsData, err := exchange.Client.GetOptions(exchange.Symbols[i].Symbol)
+					if slices.Contains(exchange.AllSymbols[i].FetchFilter, "option") {
+						optionsData, err := exchange.Client.GetOptions(exchange.AllSymbols[i].Symbol)
 						if err != nil {
-							slog.Error("Ошибка при получении данных по опционам", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
+							slog.Error("Ошибка при получении данных по опционам", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "err", err)
 						}
 
 						//передадим данне по опционам в общую структуру
-						exchange.Symbols[i].OptionsData = optionsData
+						exchange.AllSymbols[i].OptionsData = optionsData
 
 					}
 				}
@@ -308,7 +308,7 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
-			slog.Info("Воркер остановлен", "exchangeName", exchange.Name)
+			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
 			return
 		}
 	}
@@ -364,7 +364,7 @@ func WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct
 // запускает воркера для получения данных с определенного канала
 func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string, topicArr []string, dataChan chan []byte) {
 
-	slog.Info("Запуск воркера", "exchangeName", exchange.Name)
+	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
 	//структура для подписки
 	type Request struct {
@@ -375,7 +375,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 	//установим подключение вебсокет с помощю клиента
 	conn, _, err := exchange.Client.WsConnect(streamType)
 	if err != nil {
-		slog.Error("Ошибка подключения к ws", "exchangeName", exchange.Name, "streamType", streamType, "error", err)
+		slog.Error("Ошибка подключения к ws", "exchangeName", exchange.ExchangeName, "streamType", streamType, "error", err)
 	}
 	defer conn.Close()
 
@@ -383,7 +383,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 	pingStopChan := make(chan struct{})
 
 	//запустим воркер для пинга к серверу по интервалу
-	go WsPingTimer(ctx, conn, pingStopChan, exchange.Name)
+	go WsPingTimer(ctx, conn, pingStopChan, exchange.ExchangeName)
 
 	//запрос подписки
 	req := Request{
@@ -393,10 +393,10 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 
 	//подпишемся на каналы
 	if err := conn.WriteJSON(req); err != nil {
-		slog.Error("Ошибка подписки по ws", "exchangeName", exchange.Name, "error", err)
+		slog.Error("Ошибка подписки по ws", "exchangeName", exchange.ExchangeName, "error", err)
 	}
 
-	slog.Info("Оформлена подписка на Tickers по ws", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
+	slog.Info("Оформлена подписка на Tickers по ws", "exchangeName", exchange.ExchangeName, "streamType", streamType, "topicArr", topicArr)
 
 	//горутина для отключения воркера по контексту
 	go func() {
@@ -407,7 +407,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 		// закрываем соедиение
 		conn.Close()
 
-		slog.Info("Работа горутины закрывающей соеденение ws завершена", "exchangeName", exchange.Name, "streamType", streamType)
+		slog.Info("Работа горутины закрывающей соеденение ws завершена", "exchangeName", exchange.ExchangeName, "streamType", streamType)
 	}()
 
 	//цикл чтения данных из вебсокета
@@ -415,7 +415,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 
 		//если контекст отменен — выходим, не пытаясь подключиться снова
 		if ctx.Err() != nil {
-			slog.Info("Ws linear отключен по контексту", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
+			slog.Info("Ws linear отключен по контексту", "exchangeName", exchange.ExchangeName, "streamType", streamType, "topicArr", topicArr)
 			break
 		}
 
@@ -424,16 +424,16 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 		if err != nil {
 			// Если контекст отменен — это штатное закрытие сокета, выходим без паники
 			if ctx.Err() != nil {
-				slog.Info("Websocket отключен по контексту", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
+				slog.Info("Websocket отключен по контексту", "exchangeName", exchange.ExchangeName, "streamType", streamType, "topicArr", topicArr)
 				break
 			}
 
-			slog.Error("Ошибка чтения ws", "exchangeName", exchange.Name, "error", err)
+			slog.Error("Ошибка чтения ws", "exchangeName", exchange.ExchangeName, "error", err)
 
 			//остановим горутину пинга на сервер
 			close(pingStopChan)
 
-			slog.Info("Запущен таймер переподключение WebSocket", "exchangeName", exchange.Name, "streamType", streamType)
+			slog.Info("Запущен таймер переподключение WebSocket", "exchangeName", exchange.ExchangeName, "streamType", streamType)
 
 			//таймер для переподключения
 			ticker := time.NewTicker(20 * time.Second)
@@ -446,12 +446,12 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 				//если тикер дал тик
 				case <-ticker.C:
 
-					slog.Info("Переподключение WebSocket...", "exchangeName", exchange.Name)
+					slog.Info("Переподключение WebSocket...", "exchangeName", exchange.ExchangeName)
 
 					//переопределим подключение
 					conn, _, err = exchange.Client.WsConnect(streamType)
 					if err != nil {
-						slog.Error("Ошибка подключения к ws", "exchangeName", exchange.Name, "error", err)
+						slog.Error("Ошибка подключения к ws", "exchangeName", exchange.ExchangeName, "error", err)
 
 						//продолжим цикл for - да да continue продолжает for а если break то прерывает селект)))
 						continue
@@ -462,18 +462,18 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 					pingStopChan = make(chan struct{})
 
 					//запустим воркер для пинга к серверу по интервалу на новом соединении и сновым каналом управления
-					go WsPingTimer(ctx, conn, pingStopChan, exchange.Name)
+					go WsPingTimer(ctx, conn, pingStopChan, exchange.ExchangeName)
 
 					//подпишемся на каналы
 					if err := conn.WriteJSON(req); err != nil {
-						slog.Error("Ошибка подписки по ws", "exchangeName", exchange.Name, "error", err)
+						slog.Error("Ошибка подписки по ws", "exchangeName", exchange.ExchangeName, "error", err)
 					}
 
-					slog.Info("Оформлена подписка на Tickers по ws", "exchangeName", exchange.Name, "streamType", streamType, "topicArr", topicArr)
+					slog.Info("Оформлена подписка на Tickers по ws", "exchangeName", exchange.ExchangeName, "streamType", streamType, "topicArr", topicArr)
 
 					//отановим таймер подключения
 					ticker.Stop()
-					slog.Debug("Таймер для переподключения к WebsocketLinear остановлен", "exchangeName", exchange.Name)
+					slog.Debug("Таймер для переподключения к WebsocketLinear остановлен", "exchangeName", exchange.ExchangeName)
 
 					//остановим цикл for через метку ReconnectLoop
 					break ReconnectLoop
@@ -481,7 +481,7 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 				//если работа программы остановлены
 				case <-ctx.Done():
 					// Завершаем работу по контексту
-					slog.Info("Воркер остановлен", "exchangeName", exchange.Name)
+					slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
 					return
 				}
 			}
@@ -494,13 +494,13 @@ func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string,
 
 			isPong, err := exchange.Client.WsDecodePong(message)
 			if err != nil {
-				slog.Error("Ошибка при декодировании pong", "exchangeName", exchange.Name, "error", err)
+				slog.Error("Ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "error", err)
 				slog.Error("Полное сообщение от сервера", "string(message)", string(message))
 			}
 			//если пришло сообщение pong (в ответ на наш ping)
 			if isPong == true {
 
-				slog.Info("От сервера получен ответ pong", "exchangeName", exchange.Name)
+				slog.Info("От сервера получен ответ pong", "exchangeName", exchange.ExchangeName)
 
 				//отключим дедлайн
 				conn.SetReadDeadline(time.Time{})
@@ -528,33 +528,33 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 	var topicArr []string
 
 	//для каждого символа для текущей биржи
-	for i := range exchange.Symbols {
+	for i := range exchange.AllSymbols {
 
 		//если для символа существует запиись получать данные из соответствующей категории
-		if category == "spot" && slices.Contains(exchange.Symbols[i].FetchFilter, "spot") {
+		if category == "spot" && slices.Contains(exchange.AllSymbols[i].FetchFilter, "spot") {
 
 			//определим тип потока
 			streamType = "ws-spot-channel"
 
 			//получим сформированный топик от клиента
-			topic, err := exchange.Client.FormTopic(streamType, []string{exchange.Symbols[i].Symbol})
+			topic, err := exchange.Client.FormTopic(streamType, []string{exchange.AllSymbols[i].Symbol})
 			if err != nil {
-				slog.Error("Ошибка при формировании топика", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "error", err)
+				slog.Error("Ошибка при формировании топика", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "error", err)
 			}
 			//добавим элемент
 			topicArr = append(topicArr, topic)
 		}
 
 		//если входящая категория linear и для символа стоит отметка получать данные linear
-		if category == "linear" && slices.Contains(exchange.Symbols[i].FetchFilter, "linear") {
+		if category == "linear" && slices.Contains(exchange.AllSymbols[i].FetchFilter, "linear") {
 
 			//определим тип потока
 			streamType = "ws-linear-channel"
 
 			//получим сформированный топик от клиента
-			topic, err := exchange.Client.FormTopic(streamType, []string{exchange.Symbols[i].Symbol})
+			topic, err := exchange.Client.FormTopic(streamType, []string{exchange.AllSymbols[i].Symbol})
 			if err != nil {
-				slog.Error("Ошибка при формировании топика", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "error", err)
+				slog.Error("Ошибка при формировании топика", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "error", err)
 			}
 			//добавим элемент
 			topicArr = append(topicArr, topic)
@@ -577,31 +577,31 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 			//декодируем сообщение с помощью клиента
 			data, err := exchange.Client.WsDecodeLinearLastPrice(message)
 			if err != nil {
-				slog.Error("Ошибка при декодировании lastPrice", "exchangeName", exchange.Name, "error", err)
+				slog.Error("Ошибка при декодировании lastPrice", "exchangeName", exchange.ExchangeName, "error", err)
 			}
 
 			//если есть изменения по LastPrice
 			if data.LastPrice != "" {
 
-				// slog.Debug("Получены данные lastPrice", "exchangeName", exchange.Name, "symbol", data.Symbol, "LastPrice", data.LastPrice)
+				// slog.Debug("Получены данные lastPrice", "exchangeName", exchange.ExchangeName, "symbol", data.Symbol, "LastPrice", data.LastPrice)
 
 				//получим последнюю цену по символу
-				for i := range exchange.Symbols {
+				for i := range exchange.AllSymbols {
 
 					//если это данные по текущему символу
-					if exchange.Symbols[i].Symbol+"USDT" == data.Symbol {
+					if exchange.AllSymbols[i].Symbol+"USDT" == data.Symbol {
 
 						if streamType == "ws-spot-channel" {
 
 							//обновим свечку
-							exchange.Symbols[i].LastCandleSpot.UpdateKlineLastCandle(data.LastPrice)
+							exchange.AllSymbols[i].LastCandleSpot.UpdateKlineLastCandle(data.LastPrice)
 						}
 						if streamType == "ws-linear-channel" {
 
 							//обновим свечку
-							exchange.Symbols[i].LastCandleLinear.UpdateKlineLastCandle(data.LastPrice)
+							exchange.AllSymbols[i].LastCandleLinear.UpdateKlineLastCandle(data.LastPrice)
 
-							// slog.Warn("Обновленная lastCandle",  "exchangeName", exchange.Name, "symbol", data.Symbol, "streamType", streamType, "lastCandle", exchange.Symbols[i].LastCandleLinear.GetKlineLastCandle())
+							// slog.Warn("Обновленная lastCandle",  "exchangeName", exchange.ExchangeName, "symbol", data.Symbol, "streamType", streamType, "lastCandle", exchange.AllSymbols[i].LastCandleLinear.GetKlineLastCandle())
 
 						}
 
@@ -611,7 +611,7 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 			}
 
 		case <-ctx.Done():
-			slog.Info("Внешний обработчик остановлен по контексту", "exchangeName", exchange.Name)
+			slog.Info("Внешний обработчик остановлен по контексту", "exchangeName", exchange.ExchangeName)
 			return
 		}
 	}
@@ -621,13 +621,13 @@ func GetKlineCandleLast(ctx context.Context, pool *pgxpool.Pool, exchange *share
 // воркер для сохранения данных в бд по таймеру
 func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
-	slog.Info("Запуск воркера", "exchangeName", exchange.Name)
+	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
 	//создадим тикер который будет срабатывать каждые 1 секунду
 	ticker := time.NewTicker(1 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер остановлен", "exchangeName", exchange.Name)
+		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
 	}()
 
 	for {
@@ -651,7 +651,7 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 			if minutes%15 == 0 && seconds == 10 {
 
 				//для каждого символа - через индекс потому что внутри мьютексы
-				for i := range exchange.Symbols {
+				for i := range exchange.AllSymbols {
 
 					//сдвигаем время на 15 минут назад
 					fifteenMinutesAgo := now.Add(-15 * time.Minute)
@@ -661,19 +661,19 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 
 					//сформируем объект для записи
 					symbolData := shared.SymbolData{
-						ExchangeName:    exchange.Name,
-						Symbol:          exchange.Symbols[i].Symbol,
-						LastPriceSpot:   exchange.Symbols[i].LastCandleSpot.GetKlineLastCandleClosePrice(),
-						LastPriceLinear: exchange.Symbols[i].LastCandleSpot.GetKlineLastCandleClosePrice(),
+						ExchangeName:    exchange.ExchangeName,
+						Symbol:          exchange.AllSymbols[i].Symbol,
+						LastPriceSpot:   exchange.AllSymbols[i].LastCandleSpot.GetKlineLastCandleClosePrice(),
+						LastPriceLinear: exchange.AllSymbols[i].LastCandleSpot.GetKlineLastCandleClosePrice(),
 						LinearData:      []shared.LinearData{},
-						OptionsData:     exchange.Symbols[i].OptionsData,
+						OptionsData:     exchange.AllSymbols[i].OptionsData,
 						TimeMs:          strconv.FormatInt(timeMs, 10),
 					}
 
 					// 4. Обязательно переводим структуру Go в JSON-строку перед отправкой в БД
 					jsonData, err := json.Marshal(symbolData)
 					if err != nil {
-						slog.Error("Ошибка при создании json из symbolData", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "err", err)
+						slog.Error("Ошибка при создании json из symbolData", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "err", err)
 						return
 					}
 
@@ -688,19 +688,19 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 					defer cancel()
 
 					// Выполняем запрос через пул соединений
-					_, err = pool.Exec(dbCtx, query, exchange.Name, exchange.Symbols[i].Symbol, string(jsonData), timeMs)
+					_, err = pool.Exec(dbCtx, query, exchange.ExchangeName, exchange.AllSymbols[i].Symbol, string(jsonData), timeMs)
 					if err != nil {
-						slog.Error("Ошибка при сохранении SymbolData", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "timeMs", timeMs, "err", err)
+						slog.Error("Ошибка при сохранении SymbolData", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "timeMs", timeMs, "err", err)
 						return
 					}
 
-					slog.Info("Данные SymbolData сохранены в бд", "exchangeName", exchange.Name, "symbol", exchange.Symbols[i].Symbol, "timeMs", timeMs)
+					slog.Info("Данные SymbolData сохранены в бд", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "timeMs", timeMs)
 				}
 			}
 
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
-			slog.Info("Воркер остановлен", "exchangeName", exchange.Name)
+			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
 			return
 		}
 	}
@@ -709,13 +709,13 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 // воркер раз в 10 сек показывает размер объекта
 func GetMemStatsTimer(ctx context.Context, exchange *shared.Exchange) {
 
-	slog.Info("Запуск воркера", "exchangeName", exchange.Name)
+	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
 	//создадим тикер который каждые 10 секунд будет срабатывать
 	ticker := time.NewTicker(60 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер остановлен", "exchangeName", exchange.Name)
+		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
 	}()
 
 	for {
@@ -730,7 +730,7 @@ func GetMemStatsTimer(ctx context.Context, exchange *shared.Exchange) {
 
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
-			slog.Info("Воркер остановлен", "exchangeName", exchange.Name)
+			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
 			return
 		}
 	}

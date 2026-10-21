@@ -10,14 +10,14 @@ import (
 // биржа
 type Exchange struct {
 	IsActive       bool
-	Name           string
-	Symbols        []Symbols
+	ExchangeName   string
+	AllSymbols     map[string]*AllSymbols
 	FetchIntervals FetchIntervals
 	Client         Client
 }
 
 // символы
-type Symbols struct {
+type AllSymbols struct {
 	Symbol      string
 	FetchFilter []string
 

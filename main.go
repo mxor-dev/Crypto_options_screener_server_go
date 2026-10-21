@@ -104,28 +104,28 @@ func main() {
 
 	//------ ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
 
-	//настройки для всех бирж
-	allExchanges := []shared.Exchange{
-		{
-			IsActive: true,
-			Name:     "Bybit",
-			Symbols: []shared.Symbols{
-				{Symbol: "BTC", FetchFilter: []string{"linear", "option"}},
-				{Symbol: "SPCX", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "ETH", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "SOL", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "DOGE", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "XRP", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "MNT", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "XAUT", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "HYPE", FetchFilter: []string{"linear", "option"}},
-				{Symbol: "NVDA", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "SNDK", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "QQQ", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "SKHY", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "MU", FetchFilter: []string{"linear", "option"}},
-				// {Symbol: "TSLA", FetchFilter: []string{"linear", "optios"}},
-				// {Symbol: "SOXL", FetchFilter: []string{"linear", "option"}},
+	//настройки для всех бирж в виде хеш-таблицы
+	AllExchanges := map[string]*shared.Exchange{
+		"Bybit": {
+			IsActive:     true,
+			ExchangeName: "Bybit",
+			AllSymbols: map[string]*shared.AllSymbols{
+				"BTC": &shared.AllSymbols{Symbol: "BTC", FetchFilter: []string{"linear", "option"}},
+				// "DOGE": &shared.AllSymbols{Symbol: "DOGE", FetchFilter: []string{"linear", "option"}},
+				// "ETH":  &shared.AllSymbols{Symbol: "ETH", FetchFilter: []string{"linear", "option"}},
+				// "HYPE": &shared.AllSymbols{Symbol: "HYPE", FetchFilter: []string{"linear", "option"}},
+				// "MNT":  &shared.AllSymbols{Symbol: "MNT", FetchFilter: []string{"linear", "option"}},
+				// "MU":   &shared.AllSymbols{Symbol: "MU", FetchFilter: []string{"linear", "option"}},
+				"NVDA": &shared.AllSymbols{Symbol: "NVDA", FetchFilter: []string{"linear", "option"}},
+				// "QQQ":  &shared.AllSymbols{Symbol: "QQQ", FetchFilter: []string{"linear", "option"}},
+				// "SKHY": &shared.AllSymbols{Symbol: "SKHY", FetchFilter: []string{"linear", "option"}},
+				// "SNDK": &shared.AllSymbols{Symbol: "SNDK", FetchFilter: []string{"linear", "option"}},
+				// "SOL":  &shared.AllSymbols{Symbol: "SOL", FetchFilter: []string{"linear", "option"}},
+				// "SOXL": &shared.AllSymbols{Symbol: "SOXL", FetchFilter: []string{"linear", "option"}},
+				"SPCX": &shared.AllSymbols{Symbol: "SPCX", FetchFilter: []string{"linear", "option"}},
+				// "TSLA": &shared.AllSymbols{Symbol: "TSLA", FetchFilter: []string{"linear", "option"}},
+				// "XAUT": &shared.AllSymbols{Symbol: "XAUT", FetchFilter: []string{"linear", "option"}},
+				// "XRP":  &shared.AllSymbols{Symbol: "XRP", FetchFilter: []string{"linear", "option"}},
 			},
 			FetchIntervals: shared.FetchIntervals{
 				RestDataGetInterval:    200 * time.Millisecond,
@@ -133,10 +133,10 @@ func main() {
 				OptionsDataGetInterval: 2 * time.Second,
 			},
 		},
-		{
-			IsActive: true,
-			Name:     "Mexc",
-			Symbols:  []shared.Symbols{},
+		"Mexc": {
+			IsActive:     true,
+			ExchangeName: "Mexc",
+			AllSymbols:   map[string]*shared.AllSymbols{},
 			FetchIntervals: shared.FetchIntervals{
 				RestDataGetInterval:    200 * time.Millisecond,
 				LinearDataGetInterval:  2 * time.Second,
@@ -156,53 +156,53 @@ func main() {
 	//------ ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ
 
 	//для каждой биржи
-	for _, exchange := range allExchanges {
+	for exchangeKey, exchangeVal := range AllExchanges {
 
-		slog.Info("Состояние биржи", "Name", exchange.Name, "IsActive", exchange.IsActive)
+		slog.Info("Состояние биржи", "exchangeName", exchangeKey, "IsActive", exchangeVal.IsActive)
 
 		//если биржа активна
-		if exchange.IsActive {
+		if exchangeVal.IsActive {
 
 			//выберем имя биржи
-			switch exchange.Name {
+			switch exchangeKey {
 			case "Bybit":
 				//создадим клиента
-				exchange.Client = bybit.New("public_data", "public_data")
+				exchangeVal.Client = bybit.New("public_data", "public_data")
 
-				slog.Info("Создан клиент для биржи", "exchangeName", exchange.Name)
+				slog.Info("Создан клиент для биржи", "exchangeName", exchangeKey)
 			case "Mexc":
-				slog.Info("Создание клиента для биржи будет реализовано позднее", "exchangeName", exchange.Name)
+				slog.Info("Создание клиента для биржи будет реализовано позднее", "exchangeName", exchangeKey)
 			default:
-				slog.Warn("Неизвестная биржа", "exchangeName", exchange.Name)
+				slog.Warn("Неизвестная биржа", "exchangeName", exchangeKey)
 			}
 
 			//если создан клинет для биржи
-			if exchange.Client != nil {
+			if exchangeVal.Client != nil {
 				//запускаем воркеров
 
 				//получим информацию для всех монет на бирже и сохраним в бд
-				workers.GetAllSymbolsInfo(pool, &exchange)
+				workers.GetAllSymbolsInfo(pool, exchangeVal)
 
 				//получаем данные kline spot для всех монет, всех интервалов и сохраним в бд
-				workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "spot")
+				workers.GetKlineDataInitial(pool, exchangeVal, &allKlineIntervals, "spot")
 
 				//получаем данные kline linear для всех монет, всех интервалов и сохраним в бд
-				workers.GetKlineDataInitial(pool, &exchange, &allKlineIntervals, "linear")
+				workers.GetKlineDataInitial(pool, exchangeVal, &allKlineIntervals, "linear")
 
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
-				go workers.GetKlineDataTimer(ctx, pool, &exchange)
+				go workers.GetKlineDataTimer(ctx, pool, exchangeVal)
 
 				//запускаем воркера для получения последних свечей
-				go workers.GetKlineCandleLast(ctx, pool, &exchange, "linear")
+				go workers.GetKlineCandleLast(ctx, pool, exchangeVal, "linear")
 
 				//запускаем воркера для получения данных по опционам по таймеру
-				go workers.GetOptionsDataTimer(ctx, pool, &exchange)
+				go workers.GetOptionsDataTimer(ctx, pool, exchangeVal)
 
 				//запуск воркера для сохранения данных
-				go workers.SaveSymbolDataToDbTimer(ctx, pool, &exchange)
+				go workers.SaveSymbolDataToDbTimer(ctx, pool, exchangeVal)
 
 				//запуск воркера для получения статистики сервера
-				go workers.GetMemStatsTimer(ctx, &exchange)
+				go workers.GetMemStatsTimer(ctx, exchangeVal)
 			}
 		}
 
@@ -237,15 +237,15 @@ func main() {
 		//инициализируем ответ в виде хеш таблицы
 		exchangesData := make(map[string]LocalExchangeInfo)
 
-		for i := range allExchanges {
+		for exchangeKey := range AllExchanges {
 
-			//лакольные данные по символу
+			//локальные данные по символу
 			localAllSymbolsInfo := make(map[string]shared.SymbolInfo)
 
 			//для каждого символа
-			for j := range allExchanges[i].Symbols {
+			for symbolKey := range AllExchanges[exchangeKey].AllSymbols {
 				//запишем данные по символу в хеш таблицу
-				localAllSymbolsInfo[allExchanges[i].Symbols[j].Symbol] = allExchanges[i].Symbols[j].Info.GetInfo()
+				localAllSymbolsInfo[symbolKey] = AllExchanges[exchangeKey].AllSymbols[symbolKey].Info.GetInfo()
 			}
 
 			//создадим экземпляр
@@ -253,9 +253,44 @@ func main() {
 			exchangeInfo.AllSymbolsInfo = localAllSymbolsInfo
 
 			//запишем в хеш таблицу биржи хеш таблицу с данные по символам
-			exchangesData[allExchanges[i].Name] = exchangeInfo
+			exchangesData[exchangeKey] = exchangeInfo
 		}
 		c.JSON(200, exchangesData)
+	})
+	//информация по свечам kline
+	r.POST("/api/kline_data", func(c *gin.Context) {
+
+		//структура даннх запроса
+		type KlineRequest struct {
+			Exchange      string `json:"exchange"`
+			Symbol        string `json:"symbol"`
+			Type          string `json:"type"`
+			KlineInterval string `json:"kline_interval"`
+		}
+
+		//переменная для запроса
+		var req KlineRequest
+
+		// парсим данные
+		if err := c.ShouldBindJSON(&req); err != nil {
+
+			slog.Error("Ошибка в данных запроса", "url", "/api/kline_data", "req", req)
+
+			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат запроса: " + err.Error()})
+			return
+		}
+
+		slog.Debug("Получен запрос POST", "url", "/api/kline_data", "req", req)
+
+		// //ответ сервера
+		// c.JSON(http.StatusOK, gin.H{
+		// 	"status":  "success",
+		// 	"symbol":  req.Symbol,
+		// 	"interval": req.KlineInterval,
+		// 	"data":    AllExchanges
+		// })
+
 	})
 
 	server := &http.Server{
