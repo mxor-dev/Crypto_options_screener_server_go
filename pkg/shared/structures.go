@@ -157,8 +157,14 @@ func (k *KlineDataMu) UpdateKlineLastCandle(lastPrice string) {
 // функция для получения последней цены закрытия
 func (k *KlineDataMu) GetKlineLastCandleClosePrice() string {
 
+	//по умолчанию запишем нуль
+	result := "0"
+
 	k.Lock()
-	result := k.KlineData.Klines[len(k.KlineData.Klines)-1][4] //свечка в формате TOHLC
+	//если длина данных klines не нулевая
+	if len(k.KlineData.Klines) != 0 {
+		result = k.KlineData.Klines[len(k.KlineData.Klines)-1][4] //свечка в формате TOHLC
+	}
 	k.Unlock()
 
 	return result
