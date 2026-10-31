@@ -54,17 +54,30 @@ type SymbolInfo struct {
 	ExchangeName string
 	Symbol       string
 
+	SpotContractName   string
 	SpotMinOrderQty    string
 	SpotTickSize       string
 	SpotPricePrecision string
 
-	LinearMinOrderQty    string
-	LinearTickSize       string
-	LinearPricePrecision string
+	PerpetualContractName   string
+	PerpetualMinOrderQty    string
+	PerpetualTickSize       string
+	PerpetualPricePrecision string
 
-	OptionMinOrderQty    string
-	OptionTickSize       string
-	OptionPricePrecision string
+	FuturesContractNameArr []string
+	FuturesMinOrderQty     string
+	FuturesTickSize        string
+	FuturesPricePrecision  string
+
+	OptionContractNameArr []string
+	OptionsMinOrderQty    string
+	OptionsTickSize       string
+	OptionsPricePrecision string
+
+	IsSpotAvailable      bool
+	IsPerpetualAvailable bool
+	IsFuturesAvailable   bool
+	IsOptionsAvailable   bool
 }
 
 type KlineDataMu struct {

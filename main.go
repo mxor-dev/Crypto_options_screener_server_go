@@ -110,22 +110,22 @@ func main() {
 			IsActive:     true,
 			ExchangeName: "Bybit",
 			AllSymbols: map[string]*shared.AllSymbols{
-				"BTC": &shared.AllSymbols{Symbol: "BTC", FetchFilter: []string{"linear", "option"}},
-				// "DOGE": &shared.AllSymbols{Symbol: "DOGE", FetchFilter: []string{"linear", "option"}},
-				// "ETH":  &shared.AllSymbols{Symbol: "ETH", FetchFilter: []string{"linear", "option"}},
-				// "HYPE": &shared.AllSymbols{Symbol: "HYPE", FetchFilter: []string{"linear", "option"}},
-				// "MNT":  &shared.AllSymbols{Symbol: "MNT", FetchFilter: []string{"linear", "option"}},
-				// "MU":   &shared.AllSymbols{Symbol: "MU", FetchFilter: []string{"linear", "option"}},
-				"NVDA": &shared.AllSymbols{Symbol: "NVDA", FetchFilter: []string{"linear", "option"}},
-				// "QQQ":  &shared.AllSymbols{Symbol: "QQQ", FetchFilter: []string{"linear", "option"}},
-				// "SKHY": &shared.AllSymbols{Symbol: "SKHY", FetchFilter: []string{"linear", "option"}},
-				// "SNDK": &shared.AllSymbols{Symbol: "SNDK", FetchFilter: []string{"linear", "option"}},
-				// "SOL":  &shared.AllSymbols{Symbol: "SOL", FetchFilter: []string{"linear", "option"}},
-				// "SOXL": &shared.AllSymbols{Symbol: "SOXL", FetchFilter: []string{"linear", "option"}},
-				"SPCX": &shared.AllSymbols{Symbol: "SPCX", FetchFilter: []string{"linear", "option"}},
-				// "TSLA": &shared.AllSymbols{Symbol: "TSLA", FetchFilter: []string{"linear", "option"}},
-				// "XAUT": &shared.AllSymbols{Symbol: "XAUT", FetchFilter: []string{"linear", "option"}},
-				// "XRP":  &shared.AllSymbols{Symbol: "XRP", FetchFilter: []string{"linear", "option"}},
+				"BTC": {Symbol: "BTC", FetchFilter: []string{"spot", "linear", "option"}},
+				// "DOGE": {Symbol: "DOGE", FetchFilter: []string{"linear", "option"}},
+				// "ETH":  {Symbol: "ETH", FetchFilter: []string{"linear", "option"}},
+				// "HYPE": {Symbol: "HYPE", FetchFilter: []string{"linear", "option"}},
+				// "MNT":  {Symbol: "MNT", FetchFilter: []string{"linear", "option"}},
+				// "MU":   {Symbol: "MU", FetchFilter: []string{"linear", "option"}},
+				"NVDA": {Symbol: "NVDA", FetchFilter: []string{"linear", "option"}}, //*
+				// "QQQ":  {Symbol: "QQQ", FetchFilter: []string{"linear", "option"}},
+				// "SKHY": {Symbol: "SKHY", FetchFilter: []string{"linear", "option"}},
+				// "SNDK": {Symbol: "SNDK", FetchFilter: []string{"linear", "option"}},
+				// "SOL":  {Symbol: "SOL", FetchFilter: []string{"linear", "option"}},
+				// "SOXL": {Symbol: "SOXL", FetchFilter: []string{"linear", "option"}},
+				"SPCX": {Symbol: "SPCX", FetchFilter: []string{"linear", "option"}}, //*
+				// "TSLA": {Symbol: "TSLA", FetchFilter: []string{"linear", "option"}},
+				// "XAUT": {Symbol: "XAUT", FetchFilter: []string{"linear", "option"}},
+				// "XRP":  {Symbol: "XRP", FetchFilter: []string{"linear", "option"}},
 			},
 			FetchIntervals: shared.FetchIntervals{
 				RestDataGetInterval:    200 * time.Millisecond,
@@ -201,23 +201,26 @@ func main() {
 				//получим информацию для всех монет на бирже и сохраним в бд
 				workers.GetAllSymbolsInfo(pool, exchangeVal)
 
-				//получаем данные kline spot для всех монет, всех интервалов и сохраним в бд
-				workers.GetKlineDataInitial(pool, exchangeVal, &allKlineIntervals, "spot")
+				//получаем данные kline spot для всех монет, всех интервалов
+				// workers.GetKlineDataInitial(exchangeVal, &allKlineIntervals, "spot")
 
-				//получаем данные kline linear для всех монет, всех интервалов и сохраним в бд
-				workers.GetKlineDataInitial(pool, exchangeVal, &allKlineIntervals, "linear")
+				//получаем данные kline linear для всех монет, всех интервалов
+				// workers.GetKlineDataInitial(exchangeVal, &allKlineIntervals, "linear")
 
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
-				go workers.GetKlineDataTimer(ctx, pool, exchangeVal)
+				// go workers.GetKlineDataTimer(ctx, exchangeVal)
 
 				//запускаем воркера для получения последних свечей
-				go workers.GetKlineCandleLast(ctx, pool, exchangeVal, "linear")
+				// go workers.GetKlineCandleLast(ctx, exchangeVal, "spot")
+
+				//запускаем воркера для получения последних свечей
+				// go workers.GetKlineCandleLast(ctx, exchangeVal, "linear")
 
 				//запускаем воркера для получения данных по опционам по таймеру
-				go workers.GetOptionsDataTimer(ctx, pool, exchangeVal)
+				// go workers.GetOptionsDataTimer(ctx, pool, exchangeVal)
 
 				//запуск воркера для сохранения данных
-				go workers.SaveSymbolDataToDbTimer(ctx, pool, exchangeVal)
+				// go workers.SaveSymbolDataToDbTimer(ctx, pool, exchangeVal)
 
 				//запуск воркера для получения статистики сервера
 				go workers.GetMemStatsTimer(ctx, exchangeVal)

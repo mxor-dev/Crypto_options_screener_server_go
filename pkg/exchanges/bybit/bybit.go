@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"crypto_options_screener/pkg/convert"
 	"crypto_options_screener/pkg/shared"
@@ -44,28 +45,40 @@ func (b *BybitClient) GetExchangeName() string {
 }
 
 // получает информацию по всем символам
-func (b *BybitClient) GetSymbolInfo(symbol string) (shared.SymbolInfo, error) {
+func (b *BybitClient) GetSymbolInfo(symbol string, RestDataGetInterval time.Duration) (shared.SymbolInfo, error) {
 
 	// slog.Info("Запрос данных SymbolInfo", "fun", "GetSymbolInfo", "ExchangeName", b.ExchangeName, "symbol", symbol)
 
-	//ответ
+	//ответ - пропишем чтобы потом не было ошибок с nil
 	result := shared.SymbolInfo{
 		ExchangeName: b.ExchangeName,
 		Symbol:       symbol,
 
+		SpotContractName:   "",
 		SpotMinOrderQty:    "",
 		SpotTickSize:       "",
 		SpotPricePrecision: "",
 
-		LinearMinOrderQty:    "",
-		LinearTickSize:       "",
-		LinearPricePrecision: "",
+		PerpetualContractName:   "",
+		PerpetualMinOrderQty:    "",
+		PerpetualTickSize:       "",
+		PerpetualPricePrecision: "",
 
-		OptionMinOrderQty:    "",
-		OptionTickSize:       "",
-		OptionPricePrecision: "",
+		FuturesContractNameArr: []string{},
+		FuturesMinOrderQty:     "",
+		FuturesTickSize:        "",
+		FuturesPricePrecision:  "",
+
+		OptionContractNameArr: []string{},
+		OptionsMinOrderQty:    "",
+		OptionsTickSize:       "",
+		OptionsPricePrecision: "",
+
+		IsSpotAvailable:      false,
+		IsPerpetualAvailable: false,
+		IsFuturesAvailable:   false,
+		IsOptionsAvailable:   false,
 	}
-
 	//------ СПОТ
 
 	//сформируем строку запроса для линейных инструментов
@@ -78,12 +91,14 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (shared.SymbolInfo, error) {
 	}
 	defer respSpot.Body.Close()
 
-	//краткая структура ответа
-	type SpotResponse struct {
+	//краткая структура ответа linear
+	type LinearResponse struct {
 		Result struct {
 			List []struct {
-				Symbol      string `json:"symbol"`
-				PriceFilter struct {
+				Symbol       string `json:"symbol"`
+				ContractType string `json:"contractType"`
+				Status       string `json:"status"`
+				PriceFilter  struct {
 					TickSize string `json:"tickSize"`
 				} `json:"priceFilter"`
 				LotSizeFilter struct {
@@ -94,7 +109,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (shared.SymbolInfo, error) {
 	}
 
 	//переменная под данные сервера
-	var dataSpot SpotResponse
+	var dataSpot LinearResponse
 
 	// Парсим данные в формате JSON
 	if err := json.NewDecoder(respSpot.Body).Decode(&dataSpot); err != nil {
@@ -104,20 +119,29 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (shared.SymbolInfo, error) {
 	//если есть данные по споту
 	if len(dataSpot.Result.List) > 0 {
 		//запишем полученные поля в result
+		result.SpotContractName = dataSpot.Result.List[0].Symbol
 		result.SpotMinOrderQty = dataSpot.Result.List[0].LotSizeFilter.MinOrderQty
 		result.SpotTickSize = dataSpot.Result.List[0].PriceFilter.TickSize
 
 		//найдем точность цены
 		result.SpotPricePrecision = convert.GetPrecisionFromString(result.SpotTickSize)
 
+		//льметим что нашли спот
+		result.IsSpotAvailable = true
+
 	} else {
-		slog.Warn("Нет данных по споту", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataSpot", dataSpot)
+		// slog.Warn("Нет данных spot", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataSpot", dataSpot)
+		slog.Warn("Нет данных spot", "ExchangeName", b.ExchangeName, "symbol", symbol)
+
 	}
+
+	//сделаем паузу между запросами
+	time.Sleep(RestDataGetInterval)
 
 	//------ ФЬЮЧЕРСЫ
 
 	//сформируем строку запроса для линейных инструментов
-	urlLinear := fmt.Sprintf("%s/v5/market/instruments-info?symbol=%s&category=%s", baseEndPont, symbol+"USDT", "linear")
+	urlLinear := fmt.Sprintf("%s/v5/market/instruments-info?baseCoin=%s&category=%s", baseEndPont, symbol, "linear")
 
 	//выполним запрос
 	respLinear, err := http.Get(urlLinear)
@@ -125,21 +149,6 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (shared.SymbolInfo, error) {
 		return shared.SymbolInfo{}, fmt.Errorf("Сетевая ошибка: %w", err)
 	}
 	defer respLinear.Body.Close()
-
-	//краткая структура ответа
-	type LinearResponse struct {
-		Result struct {
-			List []struct {
-				Symbol      string `json:"symbol"`
-				PriceFilter struct {
-					TickSize string `json:"tickSize"`
-				} `json:"priceFilter"`
-				LotSizeFilter struct {
-					MinOrderQty string `json:"minOrderQty"`
-				} `json:"lotSizeFilter"`
-			} `json:"list"`
-		} `json:"result"`
-	}
 
 	//переменная под данные сервера
 	var dataLinear LinearResponse
@@ -153,19 +162,65 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (shared.SymbolInfo, error) {
 
 	//если есть данные по фьючерсам
 	if len(dataLinear.Result.List) > 0 {
-		//запишем полученные поля в result
-		result.LinearMinOrderQty = dataLinear.Result.List[0].LotSizeFilter.MinOrderQty
-		result.LinearTickSize = dataLinear.Result.List[0].PriceFilter.TickSize
 
-		//найдем точность цены
-		result.LinearPricePrecision = convert.GetPrecisionFromString(result.LinearTickSize)
-	} else {
-		slog.Warn("Нет данных по фьючерсам", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataLinear", dataLinear)
+		//для каждой записи
+		for i := range dataLinear.Result.List {
+
+			//в зависимости от типа контракта
+			switch dataLinear.Result.List[i].ContractType {
+			case "LinearPerpetual":
+
+				//запишем полученные поля в result
+				result.PerpetualContractName = dataLinear.Result.List[i].Symbol
+				result.PerpetualMinOrderQty = dataLinear.Result.List[i].LotSizeFilter.MinOrderQty
+				result.PerpetualTickSize = dataLinear.Result.List[i].PriceFilter.TickSize
+
+				//найдем точность цены
+				result.PerpetualPricePrecision = convert.GetPrecisionFromString(result.PerpetualTickSize)
+
+				//отметим что данные найдены
+				result.IsPerpetualAvailable = true
+
+				// } else {
+			case "LinearFutures":
+
+				//если не заполнено еще ни одного имени - заполним поля один раз
+				if len(result.FuturesContractNameArr) == 0 {
+					//запишем полученные поля в result
+					result.FuturesMinOrderQty = dataLinear.Result.List[i].LotSizeFilter.MinOrderQty
+					result.FuturesTickSize = dataLinear.Result.List[i].PriceFilter.TickSize
+
+					//найдем точность цены
+					result.FuturesPricePrecision = convert.GetPrecisionFromString(result.PerpetualTickSize)
+
+					//отметим что данные найдены
+					result.IsFuturesAvailable = true
+				}
+
+				//если контракт действуюбщий
+				if dataLinear.Result.List[i].Status == "Trading" {
+					//запишем символ контракта
+					result.FuturesContractNameArr = append(result.FuturesContractNameArr, dataLinear.Result.List[i].Symbol)
+				}
+			}
+		}
+
+		if result.PerpetualContractName == "" {
+			// slog.Warn("Нет данных perpetual", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataLinear", dataLinear)
+			slog.Warn("Нет данных perpetual", "ExchangeName", b.ExchangeName, "symbol", symbol)
+		}
+		if len(result.FuturesContractNameArr) == 0 {
+			// slog.Warn("Нет данных futures", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataLinear", dataLinear)
+			slog.Warn("Нет данных futures", "ExchangeName", b.ExchangeName, "symbol", symbol)
+		}
 	}
 
-	//------ ОПЦТОНЫ
+	//сделаем паузу между запросами
+	time.Sleep(RestDataGetInterval)
 
-	//софрмируем url для опционов
+	//------ ОПЦИОНЫ
+
+	//сформируем url для опционов
 	urlOptions := fmt.Sprintf("%s/v5/market/instruments-info?baseCoin=%s&category=%s", baseEndPont, symbol, "option")
 
 	respOptions, err := http.Get(urlOptions)
@@ -201,14 +256,25 @@ func (b *BybitClient) GetSymbolInfo(symbol string) (shared.SymbolInfo, error) {
 
 	//если есть данные по опционам
 	if len(dataOption.Result.List) > 0 {
+
 		//запишем полученные поля в result
-		result.OptionMinOrderQty = dataOption.Result.List[0].LotSizeFilter.MinOrderQty
-		result.OptionTickSize = dataOption.Result.List[0].PriceFilter.TickSize
+		result.OptionsMinOrderQty = dataOption.Result.List[0].LotSizeFilter.MinOrderQty
+		result.OptionsTickSize = dataOption.Result.List[0].PriceFilter.TickSize
 
 		//найдем точность цены
-		result.OptionPricePrecision = convert.GetPrecisionFromString(result.OptionTickSize)
+		result.OptionsPricePrecision = convert.GetPrecisionFromString(result.OptionsTickSize)
+
+		//отметим что данные найдены
+		result.IsOptionsAvailable = true
+
+		//для каждого опциона
+		for i := range dataOption.Result.List {
+			//запишем имя контракта
+			result.OptionContractNameArr = append(result.OptionContractNameArr, dataOption.Result.List[i].Symbol)
+		}
 	} else {
-		slog.Warn("Нет данных по фьючерсам", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataOption", dataOption)
+		// slog.Warn("Нет данных options", "ExchangeName", b.ExchangeName, "symbol", symbol, "dataOption", dataOption)
+		slog.Warn("Нет данных options", "ExchangeName", b.ExchangeName, "symbol", symbol)
 	}
 
 	return result, nil

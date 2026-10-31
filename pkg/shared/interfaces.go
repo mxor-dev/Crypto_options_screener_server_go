@@ -2,13 +2,14 @@ package shared
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 type Client interface {
 	GetExchangeName() string
-	GetSymbolInfo(symbol string) (SymbolInfo, error)                                                //получает данные по симвоолу
+	GetSymbolInfo(symbol string, RestDataGetInterval time.Duration) (SymbolInfo, error)             //получает данные по симвоолу
 	GetKline(symbol string, category string, klineInterval string, limit string) (KlineData, error) // получает данные свечей по perpetual или споту
 	GetOptions(symbol string) ([]OptionsData, error)                                                //получает текущие данные по опционам для текущего символа
 
