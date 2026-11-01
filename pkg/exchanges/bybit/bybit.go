@@ -281,21 +281,9 @@ func (b *BybitClient) GetSymbolInfo(symbol string, RestDataGetInterval time.Dura
 }
 
 // получает данные kline
-func (b *BybitClient) GetKline(symbol string, category string, klineInterval string, limit string) (shared.KlineData, error) {
+func (b *BybitClient) GetKline(contract string, category string, interval string, limit string) ([][]string, error) {
 
-	// slog.Info("Запрос данных kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval)
-
-	result := shared.KlineData{
-		ExchangeName:  b.ExchangeName,
-		Symbol:        symbol,
-		Category:      category,
-		KlineInterval: klineInterval,
-
-		Klines:     [][]string{},
-		LastCandle: []string{},
-
-		Time: 0,
-	}
+	slog.Info("Запрос данных kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "contract", contract, "category", category, "interval", interval)
 
 	//массив для конвертации интервала
 	intervals := map[string]string{
@@ -307,22 +295,22 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	}
 
 	//конвертируем интервал
-	klineIntervalConverted := intervals[klineInterval]
+	intervalConverted := intervals[interval]
 
 	//сформируем строку запроса для линейных инструментов
-	url := fmt.Sprintf("%s/v5/market/kline?symbol=%s&category=%s&interval=%s&limit=%s", baseEndPont, symbol+"USDT", category, klineIntervalConverted, limit)
+	url := fmt.Sprintf("%s/v5/market/kline?symbol=%s&category=%s&interval=%s&limit=%s", baseEndPont, contract, category, intervalConverted, limit)
 
 	//выполним запрос
 	respSpot, err := http.Get(url)
 	if err != nil {
-		return shared.KlineData{}, fmt.Errorf("Ошбика Get запроса %s: %w", url, err)
+		return nil, fmt.Errorf("Ошбика Get запроса %s: %w", url, err)
 	}
 	defer respSpot.Body.Close()
 
 	//читаем байты ответа в переменную
 	bodyBytes, err := io.ReadAll(respSpot.Body)
 	if err != nil {
-		return shared.KlineData{}, fmt.Errorf("Ошибка чтения ответа сервера %s: %w", url, err)
+		return nil, fmt.Errorf("Ошибка чтения ответа сервера %s: %w", url, err)
 	}
 
 	//краткая структура ответа
@@ -338,7 +326,7 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 
 	// Парсим данные в формате JSON
 	if err := json.Unmarshal(bodyBytes, &data); err != nil {
-		return shared.KlineData{}, fmt.Errorf("Ошибка парсинга: %w", err)
+		return nil, fmt.Errorf("Ошибка парсинга: %w", err)
 	}
 
 	// fmt.Printf("Получены данные: \n%+v\n", data)
@@ -346,7 +334,7 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	//если массив свечей нулевой
 	if len(data.Result.List) == 0 {
 		// Завершаем работу функции и выдаем ошибку с полной строкой отсета
-		return shared.KlineData{}, fmt.Errorf("В ответе биржи отсутствуют свечи len(data.Result.List) == 0. Полный ответ сервера: %s", string(bodyBytes))
+		return nil, fmt.Errorf("В ответе биржи отсутствуют свечи len(data.Result.List) == 0. Полный ответ сервера: %s", string(bodyBytes))
 	}
 
 	//массив формата TOHLC
@@ -369,14 +357,9 @@ func (b *BybitClient) GetKline(symbol string, category string, klineInterval str
 	//поменяем порядок свечей
 	slices.Reverse(TOHLC)
 
-	//запишем полученные поля в result
-	result.Klines = TOHLC
-	result.LastCandle = TOHLC[len(TOHLC)-1]
-	result.Time = convert.GetRoundedUTCTimeMs()
+	slog.Info("Получены данные kline", "ExchangeName", b.ExchangeName, "contract", contract, "category", category, "interval", interval, "len(result.KlineData)", len(TOHLC))
 
-	slog.Info("Получены данные kline", "ExchangeName", b.ExchangeName, "symbol", symbol, "category", category, "klineInterval", klineInterval, "len(result.KlineData)", len(result.Klines))
-
-	return result, nil
+	return TOHLC, nil
 }
 
 // получает данные по опционам
@@ -778,7 +761,7 @@ func (b *BybitClient) WsDecodePong(message []byte) (bool, error) {
 	return false, nil
 }
 
-// вытаскивает из сообщения знгачение lastPrice
+// вытаскивает из сообщения значение lastPrice
 func (b *BybitClient) WsDecodeLinearLastPrice(message []byte) (shared.LastPriceResponse, error) {
 
 	// краткая структура

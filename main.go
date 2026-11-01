@@ -171,7 +171,9 @@ func main() {
 		}
 	}
 
-	//------ ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ
+	//***********************************************************
+	//****** ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ **********
+	//***********************************************************
 
 	//для каждой биржи
 	for exchangeKey, exchangeVal := range AllExchanges {
@@ -208,7 +210,7 @@ func main() {
 				// workers.GetKlineDataInitial(exchangeVal, &allKlineIntervals, "linear")
 
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
-				// go workers.GetKlineDataTimer(ctx, exchangeVal)
+				go workers.GetKlineDataTimer(ctx, exchangeVal)
 
 				//запускаем воркера для получения последних свечей
 				// go workers.GetKlineCandleLast(ctx, exchangeVal, "spot")
@@ -284,8 +286,8 @@ func main() {
 		//структура даннх запроса
 		type KlineRequest struct {
 			Exchange      string `json:"exchange"`
-			Symbol        string `json:"symbol"`
-			Category      string `json:"category"`
+			KlineSymbol   string `json:"kline_contract"`
+			KlineCategory string `json:"kline_category"`
 			KlineInterval string `json:"kline_interval"`
 		}
 
@@ -306,11 +308,11 @@ func main() {
 
 		var data shared.KlineData
 
-		switch req.Category {
+		switch req.KlineCategory {
 		case "spot":
 			//получим массив свечей
 			data = AllExchanges[req.Exchange].AllSymbols[req.Symbol].KlineSpot[req.KlineInterval].LoadKlineData()
-		case "linear":
+		case "perpetual":
 			//получим массив свечей
 			data = AllExchanges[req.Exchange].AllSymbols[req.Symbol].KlineLinear[req.KlineInterval].LoadKlineData()
 		}

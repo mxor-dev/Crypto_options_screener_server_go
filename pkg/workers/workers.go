@@ -3,6 +3,7 @@ package workers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"runtime"
 	"slices"
@@ -84,37 +85,39 @@ func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
 }
 
 // получает данные kline и сохраняет их в общем объекте
-func GetKlineData(exchange *shared.Exchange, symbol string, category string, interval string, limit string) {
+func GetKlineData(exchange *shared.Exchange, symbol string, contract string, category string, interval string, limit string) {
 
 	//получим данные
-	klineData, err := exchange.Client.GetKline(symbol, category, interval, "1000")
+	klines, err := exchange.Client.GetKline(contract, category, interval, limit)
 	if err != nil {
-		slog.Error("Ошибка при получении kline", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol, "err", err)
+		slog.Error("Ошибка при получении kline", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval, "err", err)
 		return
 	}
 
 	//если длина массива данных нулевая
-	if len(klineData.Klines) == 0 {
-		slog.Warn("Длина данных len(klineData.Klines) == 0", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol)
+	if len(klines) == 0 {
+		slog.Warn("Длина данных len(klineData.Klines) == 0", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval)
 		return
 	}
 
-	//в зависимости от категории
-	switch category {
-	case "spot":
+	//получим ключ
+	key := fmt.Sprintf("%s:%s:%s", contract, category, interval)
 
-		//запишем данные kline
-		exchange.AllSymbols[symbol].KlineSpot[interval].SaveKlineData(klineData)
+	//блокируем для чтения
+	exchange.AllSymbols[symbol].KlineData.Lock()
+	//получим запись
+	KlineData, ok := exchange.AllSymbols[symbol].KlineData.KlineDataMap[key]
+	//разблокируем
+	exchange.AllSymbols[symbol].KlineData.Unlock()
 
-		// slog.Debug("Данные KlineSpot обнолены", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol, "interval", interval, "data", exchange.AllSymbols[symbol].KlineSpot[interval])
+	//если запись не существует
+	if !ok {
+		slog.Error("Ошибка сохранения данных klines: записи exchange.AllSymbols[symbol].KlineData.KlineDataMap[key] не существет", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval, "err", err)
+		return
 
-	case "linear":
-
-		//запишем данные kline
-		exchange.AllSymbols[symbol].KlineLinear[interval].SaveKlineData(klineData)
-
-		// slog.Debug("Данные KlineLinear обнолены", "exchangeName", exchange.ExchangeName, "category", category, "symbol", symbol, "interval", interval, "data", exchange.AllSymbols[symbol].KlineLinear[interval])
 	}
+	//сохраним данные
+	KlineData.SaveKlines(klines)
 
 }
 
@@ -122,25 +125,25 @@ func GetKlineData(exchange *shared.Exchange, symbol string, category string, int
 func GetKlineDataInitial(exchange *shared.Exchange, allKlineIntervals *[]string, category string) {
 
 	//для каждого символа для текущей биржи
-	for i := range exchange.AllSymbols {
+	// for i := range exchange.AllSymbols {
 
-		//если для символа есть отметка получении данных текущей категории
-		if slices.Contains(exchange.AllSymbols[i].FetchFilter, category) {
-			//для каждого интервала
-			for _, interval := range *allKlineIntervals {
+	// 	//если для символа есть отметка получении данных текущей категории
+	// 	if slices.Contains(exchange.AllSymbols[i].FetchFilter, category) {
+	// 		//для каждого интервала
+	// 		for _, interval := range *allKlineIntervals {
 
-				//получим данные и сохраним их
-				GetKlineData(exchange, exchange.AllSymbols[i].Symbol, category, interval, "1000")
+	// 			//получим данные и сохраним их
+	// 			GetKlineData(exchange, exchange.AllSymbols[i].Symbol, category, interval, "1000")
 
-			}
-		}
+	// 		}
+	// 	}
 
-		//сделаем паузу между запросами
-		time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-	}
+	// 	//сделаем паузу между запросами
+	// 	time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+	// }
 }
 
-//------- ВОРКЕРЫ И ТАЙМЕРЫ
+//------- REST ВОРКЕРЫ ------
 
 // получает данные с определенным интервалом и записывает их в бд
 func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
@@ -181,29 +184,26 @@ func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
 				//для каждого символа для текущей биржи
 				for i := range exchange.AllSymbols {
 
-					//для каждого интервала
-					for _, interval := range []string{"15m"} {
+					//для каждой записи kline
+					for j := range exchange.AllSymbols[i].KlineData.KlineDataMap {
 
-						//если для символа стоит отметка получать данные spot
-						if slices.Contains(exchange.AllSymbols[i].FetchFilter, "spot") {
+						//фильтр по интервалу
+						if exchange.AllSymbols[i].KlineData.KlineDataMap[j].KlineData.Interval == "15m" {
 
-							//получим и сохраним в общий объект и бд данные kline
-							GetKlineData(exchange, exchange.AllSymbols[i].Symbol, "spot", interval, "1000")
+							//получим и сохраним в общий объект
+							GetKlineData(
+								exchange,
+								exchange.AllSymbols[i].Symbol,
+								exchange.AllSymbols[i].KlineData.KlineDataMap[j].KlineData.Contract,
+								exchange.AllSymbols[i].KlineData.KlineDataMap[j].KlineData.Category,
+								exchange.AllSymbols[i].KlineData.KlineDataMap[j].KlineData.Interval,
+								"1000",
+							)
+							//сделаем паузу между запросами
+							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
 						}
-
-						//если для символа стоит отметка получать данные linear
-						if slices.Contains(exchange.AllSymbols[i].FetchFilter, "linear") {
-
-							//получим и сохраним в общий объект и бд данные kline
-							GetKlineData(exchange, exchange.AllSymbols[i].Symbol, "linear", interval, "1000")
-						}
-
 					}
-
-					//сделаем паузу между запросами
-					time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
 				}
-
 			}
 			//на каждой часовой минуте и 10 секунде
 			if minutes == 0 && seconds == 10 {
@@ -211,29 +211,26 @@ func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
 				//для каждого символа для текущей биржи
 				for i := range exchange.AllSymbols {
 
-					//для каждого интервала
-					for _, interval := range []string{"1h", "1D", "1W"} {
+					//для каждой записи kline
+					for j := range exchange.AllSymbols[i].KlineData.KlineDataMap {
 
-						//если для символа стоит отметка получать данные spot
-						if slices.Contains(exchange.AllSymbols[i].FetchFilter, "spot") {
+						//фильтр по интервалу
+						if slices.Contains([]string{"1h", "1D", "1W"}, exchange.AllSymbols[i].KlineData.KlineDataMap[j].KlineData.Interval) {
 
-							//получим и сохраним в общий объект и бд данные kline
-							GetKlineData(exchange, exchange.AllSymbols[i].Symbol, "spot", interval, "1000")
+							//получим и сохраним в общий объект
+							GetKlineData(
+								exchange,
+								exchange.AllSymbols[i].Symbol,
+								exchange.AllSymbols[i].KlineData.KlineDataMap[j].KlineData.Contract,
+								exchange.AllSymbols[i].KlineData.KlineDataMap[j].KlineData.Category,
+								exchange.AllSymbols[i].KlineData.KlineDataMap[j].KlineData.Interval,
+								"1000",
+							)
+							//сделаем паузу между запросами
+							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
 						}
-
-						//если для символа стоит отметка получать данные linear
-						if slices.Contains(exchange.AllSymbols[i].FetchFilter, "linear") {
-
-							//получим и сохраним в общий объект и бд данные kline
-							GetKlineData(exchange, exchange.AllSymbols[i].Symbol, "linear", interval, "1000")
-						}
-
 					}
-
-					//сделаем паузу между запросами
-					time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
 				}
-
 			}
 
 		//если работа программы остановлены
@@ -301,7 +298,9 @@ func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 	}
 }
 
-// воркер для отправики сообщений ping
+// ------- WEB SOCKET ВОРКЕРЫ ------
+
+// вспомогательный воркер для отправики сообщений ping
 func WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct{}, exchangeName string) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchangeName)
@@ -348,7 +347,7 @@ func WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct
 	}
 }
 
-// запускает воркера для получения данных с определенного канала
+// запускает произвольного воркера для получения данных с определенного канала
 func WsWorker(ctx context.Context, exchange *shared.Exchange, streamType string, topicArr []string, dataChan chan []byte) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
@@ -612,6 +611,8 @@ func GetKlineCandleLast(ctx context.Context, exchange *shared.Exchange, category
 
 }
 
+//------- ВОРКЕРЫ для работы с БД------
+
 // воркер для сохранения данных в бд по таймеру
 func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
@@ -710,6 +711,8 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 		}
 	}
 }
+
+//------- СИСТЕИНЫЕ ВОРКЕРЫ ------
 
 // воркер раз в 10 сек показывает размер объекта
 func GetMemStatsTimer(ctx context.Context, exchange *shared.Exchange) {

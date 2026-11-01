@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"fmt"
 	"log/slog"
 	"strconv"
 	"sync"
@@ -23,10 +24,9 @@ type AllSymbols struct {
 
 	Info InfoMu
 
-	KlineSpot   map[string]*KlineDataMu
-	KlineLinear map[string]*KlineDataMu
+	KlineData AllKlineDataMu
 
-	OptionsData []OptionsData
+	OptionsData []OptionsData //протом проработать в mutex
 }
 
 type InfoMu struct {
@@ -80,16 +80,96 @@ type SymbolInfo struct {
 	IsOptionsAvailable   bool
 }
 
+type AllKlineDataMu struct {
+	KlineDataMap map[string]*KlineDataMu
+	sync.RWMutex
+}
+
 type KlineDataMu struct {
 	KlineData KlineData
 	sync.Mutex
 }
 
+type KlineData struct {
+	Contract string
+	Category string
+	Interval string
+
+	Klines     [][]string //массив формат TOHLC
+	LastCandle []string   //одна свечка формат TOHLC
+
+	DeleteTime time.Time
+}
+
+func (a *AllKlineDataMu) CreateKlineData(contract string, category string, interval string) {
+	a.Lock()
+
+	//составной ключ
+	key := fmt.Sprintf("%s:%s:%s", contract, category, interval)
+
+	//поищем запись в хеш таблице
+	_, ok := a.KlineDataMap[key]
+
+	//если записи не существует
+	if !ok {
+		//добавим запиись
+		a.KlineDataMap[key] = &KlineDataMu{}
+		slog.Info("Запись добавлена KlineData", "contract", contract, "category", category, "interval", interval)
+	} else {
+		//если зипись сущетвует
+		slog.Error("Ошибка при добавлении KlineData: запись уже существует.", "contract", contract, "category", category, "interval", interval)
+	}
+	a.Unlock()
+}
+func (a *AllKlineDataMu) DeleteKlineData(contract string, category string, interval string) {
+	a.Lock()
+
+	//составной ключ
+	key := fmt.Sprintf("%s:%s:%s", contract, category, interval)
+
+	//поищем запись в хеш таблице
+	_, ok := a.KlineDataMap[key]
+
+	//если записи не существует
+	if !ok {
+		//удалим запись
+		delete(a.KlineDataMap, key)
+		slog.Info("Запись удалена KlineData", "contract", contract, "category", category, "interval", interval)
+	} else {
+		//если зипись сущетвует
+		slog.Error("Ошибка при удалении KlineData: запись не существует.", "contract", contract, "category", category, "interval", interval)
+	}
+	a.Unlock()
+}
+func (a *AllKlineDataMu) SetDeleteTime(contract string, category string, interval string, deleteTime time.Time) {
+	a.Lock()
+
+	//составной ключ
+	key := fmt.Sprintf("%s:%s:%s", contract, category, interval)
+
+	//поищем запись в хеш таблице
+	item, ok := a.KlineDataMap[key]
+
+	//если записи не существует
+	if !ok {
+		//установим время удления
+		item.Lock()
+		item.KlineData.DeleteTime = deleteTime
+		item.Unlock()
+		slog.Info("Запись удалена KlineData", "contract", contract, "category", category, "interval", interval)
+	}
+	a.Unlock()
+}
+
 // функция для сохранения данных kline
-func (k *KlineDataMu) SaveKlineData(klineData KlineData) {
+func (k *KlineDataMu) SaveKlines(klines [][]string) {
 	//запишем данные kline
 	k.Lock()
-	k.KlineData = klineData
+	//если длина не нулевая
+	if len(klines) > 0 {
+		k.KlineData.Klines = klines
+		k.KlineData.LastCandle = klines[len(klines)-1]
+	}
 	k.Unlock()
 
 	// slog.Warn("Двнные KlineData сохранены", "klineData", klineData)
@@ -181,19 +261,6 @@ func (k *KlineDataMu) GetKlineLastCandleClosePrice() string {
 	k.Unlock()
 
 	return result
-}
-
-type KlineData struct {
-	ExchangeName string
-	Symbol       string
-	Category     string
-
-	KlineInterval string
-
-	Klines     [][]string //массив формат TOHLC
-	LastCandle []string   //одна свечка формат TOHLC
-
-	Time int64
 }
 
 // интервалы запроса данных
