@@ -109,7 +109,7 @@ func main() {
 		"Bybit": {
 			IsActive:     true,
 			ExchangeName: "Bybit",
-			AllSymbols: map[string]*shared.AllSymbols{
+			AllSymbols: map[string]*shared.SymbolData{
 				"BTC": {Symbol: "BTC", FetchFilter: []string{"spot", "linear", "option"}},
 				// "DOGE": {Symbol: "DOGE", FetchFilter: []string{"linear", "option"}},
 				// "ETH":  {Symbol: "ETH", FetchFilter: []string{"linear", "option"}},
@@ -136,7 +136,7 @@ func main() {
 		"Mexc": {
 			IsActive:     true,
 			ExchangeName: "Mexc",
-			AllSymbols:   map[string]*shared.AllSymbols{},
+			AllSymbols:   map[string]*shared.SymbolData{},
 			FetchIntervals: shared.FetchIntervals{
 				RestDataGetInterval:    200 * time.Millisecond,
 				LinearDataGetInterval:  2 * time.Second,
@@ -153,23 +153,31 @@ func main() {
 		"1W",
 	}
 
-	//для каждой биржи заполним nil map
-	for _, exchangeVal := range AllExchanges {
-		//для каждого символа
-		for _, symbolVal := range exchangeVal.AllSymbols {
+	// для каждой биржи
+	for exchangeName := range AllExchanges {
 
-			//создадим хеш таблицы для хранения kline
-			symbolVal.KlineSpot = map[string]*shared.KlineDataMu{}
-			symbolVal.KlineLinear = map[string]*shared.KlineDataMu{}
+		// Перебираем символы внутри конкретной биржи по ключу (symbolName)
+		for symbolName := range AllExchanges[exchangeName].AllSymbols {
 
-			//для каждого интервала
-			for i := range allKlineIntervals {
-				//создадим пустую запись в хеш таблице
-				symbolVal.KlineSpot[allKlineIntervals[i]] = &shared.KlineDataMu{}
-				symbolVal.KlineLinear[allKlineIntervals[i]] = &shared.KlineDataMu{}
+			// Получаем ПРЯМОЙ указатель на объект в мапе, чтобы менять оригинал
+			symbolData := AllExchanges[exchangeName].AllSymbols[symbolName]
+
+			// Инициализируем мапу клайнов (Мьютексы на старте лочить НЕ НУЖНО)
+			symbolData.AllKlineData = shared.KlineDataMapMu{
+				KlineDataMap: make(map[string]*shared.KlineDataMu),
 			}
+
+			// Инициализируем пустой слайс для опционов
+			symbolData.OptionsData = []shared.OptionsData{}
 		}
 	}
+
+	//дельта удаления Kline
+	KlineDeleteDeltaTime := 5 * time.Minute
+	// KlineDeleteDeltaTime = 1 * time.Hour
+
+	//лимит на свечки
+	KlineLimit := "1000"
 
 	//***********************************************************
 	//****** ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ **********
@@ -224,6 +232,9 @@ func main() {
 				//запуск воркера для сохранения данных
 				// go workers.SaveSymbolDataToDbTimer(ctx, pool, exchangeVal)
 
+				//запуск воркера для очистки klineData
+				go workers.KlineDataDeleteTimer(ctx, AllExchanges)
+
 				//запуск воркера для получения статистики сервера
 				go workers.GetMemStatsTimer(ctx, exchangeVal)
 			}
@@ -251,6 +262,8 @@ func main() {
 	})
 	//информация по всем биржам и симолам
 	r.GET("/api/all_exchnges_info", func(c *gin.Context) {
+
+		slog.Debug("Получен запрос GET", "url", "/api/all_exchnges_info")
 
 		//локальный тип для ExchangeInfo - в него может быть придется положить еще что то
 		type LocalExchangeInfo struct {
@@ -285,43 +298,157 @@ func main() {
 
 		//структура даннх запроса
 		type KlineRequest struct {
-			Exchange      string `json:"exchange"`
-			KlineSymbol   string `json:"kline_contract"`
-			KlineCategory string `json:"kline_category"`
-			KlineInterval string `json:"kline_interval"`
+			ExchangeName string `json:"exchange_name"`
+			Symbol       string `json:"symbol"`
+			Contract     string `json:"contract"`
+			Category     string `json:"category"`
+			Interval     string `json:"interval"`
 		}
 
 		//переменная для запроса
 		var req KlineRequest
 
+		//структура даннх ответа
+		type KlineResponse struct {
+			ExchangeName string
+			Symbol       string
+			Contract     string
+			Category     string
+			Interval     string
+			Klines       [][]string
+			LastCandle   []string
+		}
+
 		// парсим данные
 		if err := c.ShouldBindJSON(&req); err != nil {
 
-			slog.Error("Ошибка в данных запроса", "url", "/api/kline_data", "req", req)
+			slog.Error("Ошибка в запросе: неверный формат данных", "url", "/api/kline_data", "req", req)
 
 			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат запроса: " + err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: неверный формат данных"})
 			return
 		}
 
 		slog.Debug("Получен запрос POST", "url", "/api/kline_data", "req", req)
 
-		var data shared.KlineData
+		//проверим есть ли такая биржа
+		_, ok := AllExchanges[req.ExchangeName]
+		if !ok {
+			slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/kline_data", "req", req)
 
-		switch req.KlineCategory {
-		case "spot":
-			//получим массив свечей
-			data = AllExchanges[req.Exchange].AllSymbols[req.Symbol].KlineSpot[req.KlineInterval].LoadKlineData()
-		case "perpetual":
-			//получим массив свечей
-			data = AllExchanges[req.Exchange].AllSymbols[req.Symbol].KlineLinear[req.KlineInterval].LoadKlineData()
+			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой биржи не существует"})
+			return
+		}
+		//проверим есть ли такая биржа
+		SymbolData, ok := AllExchanges[req.ExchangeName].AllSymbols[req.Symbol]
+		if !ok {
+			slog.Error("Ошибка в запросе: такого символа не существует", "url", "/api/kline_data", "req", req)
+
+			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой символа не существует"})
+			return
 		}
 
-		//дадим ответ
-		c.JSON(http.StatusOK, gin.H{
-			"status": "success",
-			"data":   data,
-		})
+		//составим начальный ответ
+		response := KlineResponse{
+			ExchangeName: req.ExchangeName,
+			Symbol:       req.Symbol,
+			Contract:     "",
+			Category:     "",
+			Interval:     "",
+			Klines:       [][]string{},
+			LastCandle:   []string{},
+		}
+
+		//составим ключ
+		key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, req.Interval)
+		SymbolData.AllKlineData.RLock()
+		KlineDataMu, ok := SymbolData.AllKlineData.KlineDataMap[key]
+		SymbolData.AllKlineData.RUnlock()
+
+		//если данные не найдены
+		if !ok {
+
+			slog.Error("Данные по запросу не найдены", "url", "/api/kline_data", "req", req)
+
+			//создадим данные с таким ключом
+			SymbolData.AllKlineData.Lock()
+
+			//для каждого интервала
+			for i := range allKlineIntervals {
+				//смформируем ключ
+				key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, allKlineIntervals[i])
+				//сделаем пустой объект
+				SymbolData.AllKlineData.KlineDataMap[key] = &shared.KlineDataMu{}
+
+				//заполним поля начальными значениями
+				SymbolData.AllKlineData.KlineDataMap[key].KlineData = shared.KlineData{
+					Contract: req.Contract,
+					Category: req.Category,
+					Interval: allKlineIntervals[i],
+
+					Klines:     [][]string{},
+					LastCandle: []string{},
+
+					DeleteTime: time.Now().Add(KlineDeleteDeltaTime),
+				}
+			}
+			SymbolData.AllKlineData.Unlock()
+
+			//получим данные kline начальные для всех интервалов - делаем отдельно чтобы не зависали локи мьютексов
+			workers.GetKlineDataInitial(AllExchanges[req.ExchangeName], allKlineIntervals, req.Symbol, req.Contract, req.Category, KlineLimit)
+
+			//еще раз обратимя к данным они уже должны быть
+
+			SymbolData.AllKlineData.RLock()
+			KlineDataMu, ok := SymbolData.AllKlineData.KlineDataMap[key]
+			SymbolData.AllKlineData.RUnlock()
+
+			if !ok {
+				slog.Error("Ошибка в запросе: после получения начальных данных, данные kline не находяться", "url", "/api/kline_data", "req", req)
+
+				// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: после получения начальных данных, данные kline не находяться"})
+				return
+
+			}
+
+			//получим данные
+			KlineData := KlineDataMu.GetKlineData()
+
+			//заполним недостающие поля
+			response.Contract = KlineData.Contract
+			response.Category = KlineData.Category
+			response.Interval = KlineData.Interval
+			response.Klines = KlineData.Klines
+			response.LastCandle = KlineData.LastCandle
+
+			//дадим ответ
+			c.JSON(http.StatusOK, gin.H{
+				"status": "success",
+				"data":   response,
+			})
+
+		} else {
+			slog.Info("Данные по запросу найдены", "url", "/api/kline_data", "req", req)
+
+			//получим данные
+			KlineData := KlineDataMu.GetKlineData()
+
+			//заполним недостающие поля
+			response.Contract = KlineData.Contract
+			response.Category = KlineData.Category
+			response.Interval = KlineData.Interval
+			response.Klines = KlineData.Klines
+			response.LastCandle = KlineData.LastCandle
+
+			//дадим ответ
+			c.JSON(http.StatusOK, gin.H{
+				"status": "success",
+				"data":   response,
+			})
+		}
 
 	})
 

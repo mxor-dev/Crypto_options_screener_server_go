@@ -796,9 +796,9 @@ func (b *BybitClient) FormTopic(streamType string, args []string) (string, error
 	//в зависимости от типа потока
 	switch streamType {
 	case "ws-spot-channel":
-		return fmt.Sprintf("tickers.%sUSDT", args[0]), nil
+		return fmt.Sprintf("tickers.%s", args[0]), nil
 	case "ws-linear-channel":
-		return fmt.Sprintf("tickers.%sUSDT", args[0]), nil
+		return fmt.Sprintf("tickers.%s", args[0]), nil
 	default:
 		return "", fmt.Errorf("Неизвестный streamType: %s", streamType)
 	}

@@ -12,19 +12,19 @@ import (
 type Exchange struct {
 	IsActive       bool
 	ExchangeName   string
-	AllSymbols     map[string]*AllSymbols
+	AllSymbols     map[string]*SymbolData
 	FetchIntervals FetchIntervals
 	Client         Client
 }
 
 // символы
-type AllSymbols struct {
+type SymbolData struct {
 	Symbol      string
 	FetchFilter []string
 
 	Info InfoMu
 
-	KlineData AllKlineDataMu
+	AllKlineData KlineDataMapMu
 
 	OptionsData []OptionsData //протом проработать в mutex
 }
@@ -80,7 +80,7 @@ type SymbolInfo struct {
 	IsOptionsAvailable   bool
 }
 
-type AllKlineDataMu struct {
+type KlineDataMapMu struct {
 	KlineDataMap map[string]*KlineDataMu
 	sync.RWMutex
 }
@@ -101,7 +101,7 @@ type KlineData struct {
 	DeleteTime time.Time
 }
 
-func (a *AllKlineDataMu) CreateKlineData(contract string, category string, interval string) {
+func (a *KlineDataMapMu) CreateKlineData(contract string, category string, interval string) {
 	a.Lock()
 
 	//составной ключ
@@ -121,7 +121,7 @@ func (a *AllKlineDataMu) CreateKlineData(contract string, category string, inter
 	}
 	a.Unlock()
 }
-func (a *AllKlineDataMu) DeleteKlineData(contract string, category string, interval string) {
+func (a *KlineDataMapMu) DeleteKlineData(contract string, category string, interval string) {
 	a.Lock()
 
 	//составной ключ
@@ -141,7 +141,7 @@ func (a *AllKlineDataMu) DeleteKlineData(contract string, category string, inter
 	}
 	a.Unlock()
 }
-func (a *AllKlineDataMu) SetDeleteTime(contract string, category string, interval string, deleteTime time.Time) {
+func (a *KlineDataMapMu) SetDeleteTime(contract string, category string, interval string, deleteTime time.Time) {
 	a.Lock()
 
 	//составной ключ
@@ -176,7 +176,7 @@ func (k *KlineDataMu) SaveKlines(klines [][]string) {
 }
 
 // функция для получения данных kline
-func (k *KlineDataMu) LoadKlineData() KlineData {
+func (k *KlineDataMu) GetKlineData() KlineData {
 
 	//запишем данные kline
 	k.Lock()
@@ -270,7 +270,7 @@ type FetchIntervals struct {
 	OptionsDataGetInterval time.Duration
 }
 
-type SymbolData struct {
+type SymbolDataToDb struct {
 	ExchangeName    string
 	Symbol          string
 	LastPriceSpot   string
