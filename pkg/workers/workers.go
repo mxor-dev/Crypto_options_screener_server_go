@@ -581,6 +581,7 @@ func KlineDataDeleteTimer(ctx context.Context, allExchanges map[string]*shared.E
 						allExchanges[i].AllSymbols[j].AllKlineData.Lock()
 						for _, k := range keysToDelete {
 							delete(allExchanges[i].AllSymbols[j].AllKlineData.KlineDataMap, k)
+							slog.Info("Запись kline удалена по истечению времени", "KlineDataMap[k]", allExchanges[i].AllSymbols[j].AllKlineData.KlineDataMap[k])
 						}
 						allExchanges[i].AllSymbols[j].AllKlineData.Unlock()
 					}

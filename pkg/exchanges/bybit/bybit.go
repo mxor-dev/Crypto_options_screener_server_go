@@ -297,8 +297,14 @@ func (b *BybitClient) GetKline(contract string, category string, interval string
 	//конвертируем интервал
 	intervalConverted := intervals[interval]
 
+	//конвертируем категории
+	categoryConverted := category
+	if category == "perpetual" || category == "futures" {
+		categoryConverted = "linear"
+	}
+
 	//сформируем строку запроса для линейных инструментов
-	url := fmt.Sprintf("%s/v5/market/kline?symbol=%s&category=%s&interval=%s&limit=%s", baseEndPont, contract, category, intervalConverted, limit)
+	url := fmt.Sprintf("%s/v5/market/kline?symbol=%s&category=%s&interval=%s&limit=%s", baseEndPont, contract, categoryConverted, intervalConverted, limit)
 
 	//выполним запрос
 	respSpot, err := http.Get(url)

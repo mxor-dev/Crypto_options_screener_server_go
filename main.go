@@ -146,12 +146,12 @@ func main() {
 	}
 
 	//интервалы kline
-	allKlineIntervals := []string{
-		"15m",
-		"1h",
-		"1D",
-		"1W",
-	}
+	// allKlineIntervals := []string{
+	// 	"15m",
+	// 	"1h",
+	// 	"1D",
+	// 	"1W",
+	// }
 
 	// для каждой биржи
 	for exchangeName := range AllExchanges {
@@ -173,8 +173,8 @@ func main() {
 	}
 
 	//дельта удаления Kline
-	KlineDeleteDeltaTime := 5 * time.Minute
-	// KlineDeleteDeltaTime = 1 * time.Hour
+	// KlineDeleteDeltaTime := 5 * time.Minute
+	KlineDeleteDeltaTime := 1 * time.Hour
 
 	//лимит на свечки
 	KlineLimit := "1000"
@@ -370,34 +370,57 @@ func main() {
 		//если данные не найдены
 		if !ok {
 
-			slog.Error("Данные по запросу не найдены", "url", "/api/kline_data", "req", req)
+			slog.Warn("Данные по запросу не найдены", "url", "/api/kline_data", "req", req)
+
+			// //создадим данные с таким ключом
+			// SymbolData.AllKlineData.Lock()
+
+			// //для каждого интервала
+			// for i := range allKlineIntervals {
+			// 	//смформируем ключ
+			// 	key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, allKlineIntervals[i])
+			// 	//сделаем пустой объект
+			// 	SymbolData.AllKlineData.KlineDataMap[key] = &shared.KlineDataMu{}
+
+			// 	//заполним поля начальными значениями
+			// 	SymbolData.AllKlineData.KlineDataMap[key].KlineData = shared.KlineData{
+			// 		Contract: req.Contract,
+			// 		Category: req.Category,
+			// 		Interval: allKlineIntervals[i],
+
+			// 		Klines:     [][]string{},
+			// 		LastCandle: []string{},
+
+			// 		DeleteTime: time.Now().Add(KlineDeleteDeltaTime),
+			// 	}
+			// }
+			// SymbolData.AllKlineData.Unlock()
+
+			// //получим данные kline начальные для всех интервалов - делаем отдельно чтобы не зависали локи мьютексов
+			// workers.GetKlineDataInitial(AllExchanges[req.ExchangeName], allKlineIntervals, req.Symbol, req.Contract, req.Category, KlineLimit)
 
 			//создадим данные с таким ключом
 			SymbolData.AllKlineData.Lock()
 
-			//для каждого интервала
-			for i := range allKlineIntervals {
-				//смформируем ключ
-				key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, allKlineIntervals[i])
-				//сделаем пустой объект
-				SymbolData.AllKlineData.KlineDataMap[key] = &shared.KlineDataMu{}
+			//смформируем ключ
+			key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, req.Interval)
+			//сделаем пустой объект
+			SymbolData.AllKlineData.KlineDataMap[key] = &shared.KlineDataMu{}
 
-				//заполним поля начальными значениями
-				SymbolData.AllKlineData.KlineDataMap[key].KlineData = shared.KlineData{
-					Contract: req.Contract,
-					Category: req.Category,
-					Interval: allKlineIntervals[i],
+			//заполним поля начальными значениями
+			SymbolData.AllKlineData.KlineDataMap[key].KlineData = shared.KlineData{
+				Contract: req.Contract,
+				Category: req.Category,
+				Interval: req.Interval,
 
-					Klines:     [][]string{},
-					LastCandle: []string{},
+				Klines:     [][]string{},
+				LastCandle: []string{},
 
-					DeleteTime: time.Now().Add(KlineDeleteDeltaTime),
-				}
+				DeleteTime: time.Now().Add(KlineDeleteDeltaTime),
 			}
 			SymbolData.AllKlineData.Unlock()
 
-			//получим данные kline начальные для всех интервалов - делаем отдельно чтобы не зависали локи мьютексов
-			workers.GetKlineDataInitial(AllExchanges[req.ExchangeName], allKlineIntervals, req.Symbol, req.Contract, req.Category, KlineLimit)
+			workers.GetKlineData(AllExchanges[req.ExchangeName], req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit)
 
 			//еще раз обратимя к данным они уже должны быть
 
