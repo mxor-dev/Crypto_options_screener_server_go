@@ -1,7 +1,7 @@
 package shared
 
 import (
-	"net/http"
+	"context"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -13,9 +13,11 @@ type Client interface {
 	GetKline(contract string, category string, interval string, limit string) ([][]string, error) // получает данные свечей по perpetual или споту
 	GetOptions(symbol string) ([]OptionsData, error)                                              //получает текущие данные по опционам для текущего символа
 
-	WsConnect(streamType string) (*websocket.Conn, *http.Response, error)
+	WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct{}, exchangeName string) // функция проверки пинга разная в зависимости от биржи
 	WsDecodePong(message []byte) (bool, error)
 	WsDecodeLinearLastPrice(message []byte) (LastPriceResponse, error)
+	WsDecodeMessage(exchange *Exchange, message []byte) // обработка сообщение и передача данных в общее хранилище
 
-	FormTopic(streamType string, args []string) (string, error) //формирует топики в соответствии с внутренними названиями биржи
+	WsFormTopicGetTrades(contract string) string //формирует топики в соответствии с внутренними названиями биржи
+
 }

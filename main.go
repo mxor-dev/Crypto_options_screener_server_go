@@ -220,11 +220,24 @@ func main() {
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
 				go workers.GetKlineDataTimer(ctx, exchangeVal)
 
-				//запускаем воркера для получения последних свечей
-				// go workers.GetKlineCandleLast(ctx, exchangeVal, "spot")
+				//в зависимости от биржи для получнеия последней свечи могут использоваться один или два ws воркера
+				switch exchangeKey {
+				case "Bybit":
+					//запускаем ws воркера для получения данных по spot
+					exchangeVal.WsCmdChanSpot, err = workers.StartWebSocket(ctx, exchangeVal, "wss://stream.bybit.com/v5/public/spot")
+					if err != nil {
+						slog.Error("Ошибка при старте ws worker", "exchangeName", exchangeKey, "baseEndPoint", "wss://stream.bybit.com/v5/public/spot")
+					}
 
-				//запускаем воркера для получения последних свечей
-				// go workers.GetKlineCandleLast(ctx, exchangeVal, "linear")
+					//запускаем ws воркера для получения данных по linear
+					exchangeVal.WsCmdChanLinear, err = workers.StartWebSocket(ctx, exchangeVal, "wss://stream.bybit.com/v5/public/linear")
+					if err != nil {
+						slog.Error("Ошибка при старте ws worker", "exchangeName", exchangeKey, "baseEndPoint", "wss://stream.bybit.com/v5/public/linear")
+					}
+
+				case "Mexc":
+					slog.Info("Запуск ws worker для биржи будет реализовано позднее", "exchangeName", exchangeKey)
+				}
 
 				//запускаем воркера для получения данных по опционам по таймеру
 				// go workers.GetOptionsDataTimer(ctx, pool, exchangeVal)

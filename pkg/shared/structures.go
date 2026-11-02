@@ -10,11 +10,13 @@ import (
 
 // биржа
 type Exchange struct {
-	IsActive       bool
-	ExchangeName   string
-	AllSymbols     map[string]*SymbolData
-	FetchIntervals FetchIntervals
-	Client         Client
+	IsActive        bool
+	ExchangeName    string
+	AllSymbols      map[string]*SymbolData
+	FetchIntervals  FetchIntervals
+	Client          Client
+	WsCmdChanSpot   chan string
+	WsCmdChanLinear chan string
 }
 
 // символы

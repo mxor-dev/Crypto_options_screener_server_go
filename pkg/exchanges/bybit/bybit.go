@@ -1,6 +1,7 @@
 package bybit
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,15 +22,15 @@ import (
 // базовая точка доступа
 const baseEndPont = "https://api.bybit.com"
 
-// ------- СТРУКТУРА
+// ------- СТРУКТУРА ------
 type BybitClient struct {
 	ExchangeName string
 	apiKey       string
 	apiSecret    string
 }
 
-// ------- КОНСТРУКТОР
-func New(apiKey, apiSecret string) *BybitClient {
+// ------- КОНСТРУКТОР ------
+func New(apiKey string, apiSecret string) *BybitClient {
 	return &BybitClient{
 		ExchangeName: "Bybit",
 		apiKey:       apiKey,
@@ -37,7 +38,7 @@ func New(apiKey, apiSecret string) *BybitClient {
 	}
 }
 
-//------- МЕТОДЫ
+//------- МЕТОДЫ ------
 
 // получает ися биржи из клиента
 func (b *BybitClient) GetExchangeName() string {
@@ -722,27 +723,6 @@ func (b *BybitClient) GetOptions(symbol string) ([]shared.OptionsData, error) {
 	return result, nil
 }
 
-// создает подключение по вебсокету
-func (b *BybitClient) WsConnect(streamType string) (*websocket.Conn, *http.Response, error) {
-
-	var url string
-
-	//выберем url для подключения
-	switch streamType {
-	case "ws-spot-channel":
-		url = "wss://stream.bybit.com/v5/public/spot"
-	case "ws-linear-channel":
-		url = "wss://stream.bybit.com/v5/public/linear"
-	default:
-		return nil, nil, fmt.Errorf("Неизвестный streamType: %s", streamType)
-	}
-
-	//создаем подключение
-	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
-
-	return conn, resp, err
-}
-
 // декодирует ответ понг сервера
 func (b *BybitClient) WsDecodePong(message []byte) (bool, error) {
 	// Краткая структура для извлечения только признаков pong
@@ -796,17 +776,62 @@ func (b *BybitClient) WsDecodeLinearLastPrice(message []byte) (shared.LastPriceR
 	return result, nil
 }
 
-// формирует топик для потока и аргументов
-func (b *BybitClient) FormTopic(streamType string, args []string) (string, error) {
+// формирует топик для получения потока сделок
+func (b *BybitClient) WsFormTopicGetTrades(contract string) string {
 
-	//в зависимости от типа потока
-	switch streamType {
-	case "ws-spot-channel":
-		return fmt.Sprintf("tickers.%s", args[0]), nil
-	case "ws-linear-channel":
-		return fmt.Sprintf("tickers.%s", args[0]), nil
-	default:
-		return "", fmt.Errorf("Неизвестный streamType: %s", streamType)
+	topic := fmt.Sprintf("publicTrade.%s", contract)
+	return topic
+
+}
+
+// обработка сообщение и передача данных в общее хранилище
+func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, message []byte) {
+
+}
+
+// вспомогательный воркер для отправики сообщений ping
+func WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct{}, exchangeName string) {
+
+	slog.Info("Запуск воркера", "exchangeName", exchangeName)
+
+	// Создаем тикер с интервалом в 20 секунд
+	ticker := time.NewTicker(20 * time.Second)
+	defer func() {
+		ticker.Stop()
+		slog.Info("Таймер остановлен", "exchangeName", exchangeName)
+	}()
+
+	// Структура текстового запроса для Bybit / большинства бирж
+	type JsonPing struct {
+		Op string `json:"op"`
 	}
+	pingReq := JsonPing{Op: "ping"}
 
+	for {
+		select {
+		case <-ticker.C:
+			// Взводим дедлайн (таймаут) на 5 секунд. Если за это время сервер не пришлет нам
+			// в обычном сообщении в ответ JSON {"op":"pong"}, сокет отключится и выдаст ошибку в чтении.
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+			// Отправляем текстовый JSON Ping вместо системного фрейма
+			if err := conn.WriteJSON(pingReq); err != nil {
+				slog.Error("Ошибка отправки JSON Ping", "exchangeName", exchangeName, "error", err)
+				conn.Close() // Принудительно закрываем сокет, чтобы разблокировать цикл чтения
+
+				slog.Info("Работа вспомогательной горутины ping-pong завершена по отключению вебсокета", "exchangeName", exchangeName)
+				return // Выходим из горутины, сокет отключен
+			}
+
+			slog.Info("На сервер отправлен запрос ping", "exchangeName", exchangeName)
+		case <-stopChan:
+
+			slog.Info("Воркер остановлен по сигналу", "exchangeName", exchangeName)
+			return // Выходим по внешнемук сигналу
+
+		case <-ctx.Done():
+			slog.Info("Воркер остановлен по контксту", "exchangeName", exchangeName)
+			return // Выходим по контексту приложения
+		}
+	}
 }
