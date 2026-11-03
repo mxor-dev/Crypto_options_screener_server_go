@@ -13,11 +13,10 @@ type Client interface {
 	GetKline(contract string, category string, interval string, limit string) ([][]string, error) // получает данные свечей по perpetual или споту
 	GetOptions(symbol string) ([]OptionsData, error)                                              //получает текущие данные по опционам для текущего символа
 
-	WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct{}, exchangeName string)            // функция проверки пинга разная в зависимости от биржи
-	WsDecodeMessage(exchange *Exchange, purpose string, baseEndPoint string, conn *websocket.Conn, message []byte) // обработка сообщение и передача данных в общее хранилище
+	WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct{}, exchangeName string, baseEndPoint string) // функция проверки пинга разная в зависимости от биржи
+	WsDecodeMessage(exchange *Exchange, baseEndPoint string, conn *websocket.Conn, message []byte)                           // обработка сообщение и передача данных в общее хранилище
 
-	WsFormTopicGetTrades(contract string) string //формирует топики для получения последних сделок
-
+	// WsFormTopicGetTrades(cmdMsg CmdChanMsg) (string, error) //формирует топики для получения последних сделок
 	// WsDecodePong(message []byte) (bool, error)
 	// WsDecodeLinearLastPrice(message []byte) (LastPriceResponse, error)
 }

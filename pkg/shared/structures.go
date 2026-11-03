@@ -10,13 +10,16 @@ import (
 
 // биржа
 type Exchange struct {
-	IsActive        bool
-	ExchangeName    string
-	AllSymbols      map[string]*SymbolData
-	FetchIntervals  FetchIntervals
-	Client          Client
-	WsCmdChanSpot   chan string
-	WsCmdChanLinear chan string
+	IsActive       bool
+	ExchangeName   string
+	AllSymbols     map[string]*SymbolData
+	FetchIntervals FetchIntervals
+	Client         Client
+
+	WsCmdChanSpot   chan CmdChanMsg
+	WsCmdChanLinear chan CmdChanMsg
+
+	WsTopicList *WsTopicListMu
 }
 
 // символы
@@ -329,4 +332,15 @@ type OptionsLines struct {
 type LastPriceResponse struct {
 	Symbol    string
 	LastPrice string
+}
+
+type CmdChanMsg struct {
+	Action string
+	Topic  string
+}
+
+type WsTopicListMu struct {
+	WsTopicListSpot   []string
+	WsTopicListLinear []string
+	sync.RWMutex
 }

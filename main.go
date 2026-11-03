@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -154,7 +155,7 @@ func main() {
 	// 	"1W",
 	// }
 
-	// для каждой биржи
+	// для каждой биржи - ЗАПОЛНИМ НАЧАЛЬНЫЕ ДАННЫЕ СТРУКТУР
 	for exchangeName := range AllExchanges {
 
 		// Перебираем символы внутри конкретной биржи по ключу (symbolName)
@@ -171,6 +172,15 @@ func main() {
 			// Инициализируем пустой слайс для опционов
 			symbolData.OptionsData = []shared.OptionsData{}
 		}
+
+		AllExchanges[exchangeName].WsCmdChanSpot = nil
+		AllExchanges[exchangeName].WsCmdChanLinear = nil
+
+		AllExchanges[exchangeName].WsTopicList = &shared.WsTopicListMu{
+			WsTopicListSpot:   []string{},
+			WsTopicListLinear: []string{},
+		}
+
 	}
 
 	//дельта удаления Kline
@@ -310,7 +320,7 @@ func main() {
 	//информация по свечам kline
 	r.POST("/api/kline_data", func(c *gin.Context) {
 
-		//структура даннх запроса
+		//структура данных запроса
 		type KlineRequest struct {
 			ExchangeName string `json:"exchange_name"`
 			Symbol       string `json:"symbol"`
@@ -485,6 +495,96 @@ func main() {
 				"status": "success",
 				"data":   response,
 			})
+		}
+
+	})
+	//информация по последней свече kline
+	r.POST("/api/last_candle", func(c *gin.Context) {
+
+		//структура данных запроса
+		type LastCandleRequest struct {
+			ExchangeName string `json:"exchange_name"`
+			Symbol       string `json:"symbol"`
+			Contract     string `json:"contract"`
+			Category     string `json:"category"`
+			Interval     string `json:"interval"`
+		}
+
+		var req LastCandleRequest
+
+		//структура даннх ответа
+		type LastCandleResponse struct {
+			LastCandle []string
+		}
+
+		// парсим данные
+		if err := c.ShouldBindJSON(&req); err != nil {
+
+			slog.Error("Ошибка в запросе: неверный формат данных", "url", "/api/kline_data", "req", req)
+
+			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: неверный формат данных"})
+			return
+		}
+
+		slog.Debug("Получен запрос POST", "url", "/api/kline_data", "req", req)
+
+		//проверим есть ли такая биржа
+		_, ok := AllExchanges[req.ExchangeName]
+		if !ok {
+			slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/kline_data", "req", req)
+
+			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой биржи не существует"})
+			return
+		}
+
+		//в зависимости от имени биржи
+		switch req.ExchangeName {
+		case "bybit":
+
+			switch req.Category {
+			case "spot":
+
+				//получим список топиков для спота
+				AllExchanges[req.ExchangeName].WsTopicList.RLock()
+				WsTopicListSpot := AllExchanges[req.ExchangeName].WsTopicList.WsTopicListSpot
+				AllExchanges[req.ExchangeName].WsTopicList.RUnlock()
+
+				// если категория spot не содержит запись о подписке
+				if !slices.Contains(WsTopicListSpot, fmt.Sprintf("publicTrade.%s", req.Contract)) {
+					slog.Error("Топик не открыт", "url", "/api/kline_data", "req", req)
+
+					if AllExchanges[req.ExchangeName].WsCmdChanSpot == nil {
+						slog.Error("Канал для управления ws не определен", "url", "/api/kline_data", "req", req)
+						// если категория не определена
+						c.JSON(http.StatusBadRequest, gin.H{"error": "Канал для управления ws не определен"})
+						return
+					}
+
+					// составим сообщение
+					msg := shared.CmdChanMsg{
+						Action: "subscribe",
+						Topic:  fmt.Sprintf("publicTrade.%s", req.Contract),
+					}
+
+					// Отправляем сообщение
+					AllExchanges[req.ExchangeName].WsCmdChanSpot <- msg
+
+					return
+				}
+				//
+			case "perpetual", "futures":
+				// если категория perpetual или futures
+				// в Go можно перечислять несколько условий через запятую (аналог ||)
+
+			default:
+				slog.Error("Ошибка в запросе: такой категории не существует", "url", "/api/kline_data", "req", req)
+				// если категория не определена
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой категории не существует"})
+				return
+			}
+
 		}
 
 	})

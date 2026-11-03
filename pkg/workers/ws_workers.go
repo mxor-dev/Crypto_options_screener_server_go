@@ -2,17 +2,19 @@ package workers
 
 import (
 	"context"
-	"crypto_options_screener/pkg/shared"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"crypto_options_screener/pkg/shared"
 )
 
-func StartWebSocket(ctx context.Context, exchange *shared.Exchange, purpose string, baseEndPoint string) (chan string, error) {
+// запуск универсального вебсокета
+func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint string) (chan shared.CmdChanMsg, error) {
 	//  канал управления подписками (буферизованный, чтобы не блокировать вызывающий код)
-	subChan := make(chan string, 100)
+	cmdChan := make(chan shared.CmdChanMsg, 100)
 
 	// подключаемся к вебсокету
 	conn, _, err := websocket.DefaultDialer.Dial(baseEndPoint, nil)
@@ -20,11 +22,13 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, purpose stri
 		return nil, fmt.Errorf("ошибка подключения к ws: %w", err)
 	}
 
+	slog.Info("Ws установлено соединение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
+
 	//канал для остановки пинга
 	pingStopChan := make(chan struct{})
 
 	//запустим воркер для пинга к серверу по интервалу
-	go exchange.Client.WsPingTimer(ctx, conn, pingStopChan, exchange.ExchangeName)
+	go exchange.Client.WsPingTimer(ctx, conn, pingStopChan, exchange.ExchangeName, baseEndPoint)
 
 	//горутина для отключения воркера по контексту
 	go func() {
@@ -34,7 +38,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, purpose stri
 
 		// закрываем соедиение
 		conn.Close()
-		slog.Info("Работа горутины закрывающей соеденение ws завершена", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
+		slog.Info("Ws закрыт", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
 	}()
 
 	// Горутина для чтения сообщений (Bybit требует читать входящие данные, иначе буфер переполнится)
@@ -52,11 +56,11 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, purpose stri
 			if err != nil {
 				// Если контекст отменен — это штатное закрытие сокета, выходим без паники
 				if ctx.Err() != nil {
-					slog.Info("Websocket отключен по контексту", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
+					// slog.Info("Ws отключен по контексту", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
 					break
 				}
 
-				slog.Error("Ошибка чтения ws", "exchangeName", exchange.ExchangeName, "error", err)
+				slog.Error("Ошибка чтения ws", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "error", err)
 
 				//остановим горутину пинга на сервер
 				close(pingStopChan)
@@ -90,14 +94,12 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, purpose stri
 						pingStopChan = make(chan struct{})
 
 						//запустим воркер для пинга к серверу по интервалу на новом соединении и сновым каналом остановки
-						go exchange.Client.WsPingTimer(ctx, conn, pingStopChan, exchange.ExchangeName)
+						go exchange.Client.WsPingTimer(ctx, conn, pingStopChan, exchange.ExchangeName, baseEndPoint)
 
-						//подпишемся на каналы в соответствии
+						//подпишемся на каналы в соответствии с открытыми каналами
 						// if err := conn.WriteJSON(req); err != nil {
 						// 	slog.Error("Ошибка подписки по ws", "exchangeName", exchange.ExchangeName, "error", err)
 						// }
-
-						// slog.Info("Оформлена подписка на Tickers по ws", "exchangeName", exchange.ExchangeName, "streamType", streamType, "topicArr", topicArr)
 
 						//отановим таймер подключения
 						ticker.Stop()
@@ -118,31 +120,33 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, purpose stri
 			// slog.Debug("Получено сообщение от сервера", "string(message)", string(message))
 
 			//любой ответ передаем обработчику сообщений конкретного клиента, он дальше разбераеться что пришло с учетом особенностей биржи
-			exchange.Client.WsDecodeMessage(exchange, purpose, baseEndPoint, conn, message)
+			exchange.Client.WsDecodeMessage(exchange, baseEndPoint, conn, message)
 		}
 	}()
 
 	// 4. Горутина-менеджер (управление подписками)
 	go func() {
 		defer conn.Close()
-		slog.Info("Запущен канал управления подписками вебсокета")
+		slog.Info("Ws запущен канал управления подписками", "ExchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
 
-		for cmd := range subChan {
-			// Формируем JSON-запрос по спецификации клиента
-			request := exchange.Client.WsFormTopicGetTrades(cmd)
+		for cmdMsg := range cmdChan {
 
-			// Отправляем в вебсокет
-			err := conn.WriteJSON(request)
-			if err != nil {
-				slog.Error("Ошибка отправки запроса в WS", "topic", cmd, "err", err)
-				return
-			}
-			slog.Info("Запрос отправлен в WS", "op", cmd, "topic", cmd)
+			slog.Warn("Ws получено управляющее сообщение", "ExchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "cmdMsg", cmdMsg)
+			// // Формируем JSON-запрос по спецификации клиента
+			// request := exchange.Client.WsFormTopicGetTrades(cmdMsg)
+
+			// // Отправляем в вебсокет
+			// err := conn.WriteJSON(request)
+			// if err != nil {
+			// 	slog.Error("Ошибка отправки запроса в WS", "topic", cmd, "err", err)
+			// 	return
+			// }
+			// slog.Info("Запрос отправлен в WS", "op", cmd, "topic", cmd)
 		}
 	}()
 
 	// Возвращаем канал наружу, чтобы другие горутины могли отправлять туда команды
-	return subChan, nil
+	return cmdChan, nil
 }
 
 // запускает базового воркера для получения данных с определенного канала

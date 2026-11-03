@@ -724,15 +724,15 @@ func (b *BybitClient) GetOptions(symbol string) ([]shared.OptionsData, error) {
 }
 
 // вспомогательный воркер для отправики сообщений ping
-func WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct{}, exchangeName string) {
+func (b *BybitClient) WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct{}, exchangeName string, baseEndPoint string) {
 
-	slog.Info("Запуск воркера", "exchangeName", exchangeName)
+	slog.Info("Ws ping запуск воркера", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
 
 	// Создаем тикер с интервалом в 20 секунд
 	ticker := time.NewTicker(20 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер остановлен", "exchangeName", exchangeName)
+		slog.Info("Ws ping таймер остановлен", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
 	}()
 
 	// Структура текстового запроса для Bybit / большинства бирж
@@ -750,28 +750,28 @@ func WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct
 
 			// Отправляем текстовый JSON Ping вместо системного фрейма
 			if err := conn.WriteJSON(pingReq); err != nil {
-				slog.Error("Ошибка отправки JSON Ping", "exchangeName", exchangeName, "error", err)
+				slog.Error("Ws ошибка отправки JSON Ping", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint, "error", err)
 				conn.Close() // Принудительно закрываем сокет, чтобы разблокировать цикл чтения
 
-				slog.Info("Работа вспомогательной горутины ping-pong завершена по отключению вебсокета", "exchangeName", exchangeName)
+				slog.Info("Ws работа вспомогательной горутины ping-pong завершена по отключению вебсокета", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
 				return // Выходим из горутины, сокет отключен
 			}
 
-			slog.Info("На сервер отправлен запрос ping", "exchangeName", exchangeName)
+			slog.Info("Ws на сервер отправлен запрос ping", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
 		case <-stopChan:
 
-			slog.Info("Воркер остановлен по сигналу", "exchangeName", exchangeName)
+			slog.Info("Ws ping воркер остановлен по сигналу", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
 			return // Выходим по внешнемук сигналу
 
 		case <-ctx.Done():
-			slog.Info("Воркер остановлен по контксту", "exchangeName", exchangeName)
+			slog.Info("Ws ping воркер остановлен по контксту", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
 			return // Выходим по контексту приложения
 		}
 	}
 }
 
 // обработка сообщение и передача данных в общее хранилище
-func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, purpose string, baseEndPoint string, conn *websocket.Conn, message []byte) {
+func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint string, conn *websocket.Conn, message []byte) {
 	//еcли ответ - пустое ообщение - это переподключение
 	if string(message) == "" {
 		slog.Debug("Ws переподключен", "ExchangeName", exchange.ExchangeName)
@@ -780,17 +780,17 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, purpose string,
 		//проверим может это сигнал Pong
 		isPong, err := WsDecodePong(message)
 		if err != nil {
-			slog.Error("Ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "error", err, "message", string(message))
+			slog.Error("Ws ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "error", err, "message", string(message))
 		}
 		//если пришло сообщение pong (в ответ на наш ping)
 		if isPong == true {
 
-			slog.Info("От сервера получен ответ pong", "exchangeName", exchange.ExchangeName)
+			slog.Info("Ws от сервера получен ответ pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
 
 			//передвинем дедлайн
 			err := conn.SetReadDeadline(time.Now().Add(exchange.FetchIntervals.WsDeadLineDelta))
 			if err != nil {
-				slog.Error("Ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "error", err)
+				slog.Error("Ws ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "error", err)
 			}
 
 			//пропускаем остаток цикла
@@ -799,19 +799,25 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, purpose string,
 
 		//если это какоето другое сообщение
 		if isPong == false {
-			slog.Warn("Пришло сообщение", "exchangeName", exchange.ExchangeName, "message", string(message))
+			slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
 
 		}
 	}
 }
 
 // формирует топик для получения потока сделок
-func (b *BybitClient) WsFormTopicGetTrades(contract string, category string) string {
+// func (b *BybitClient) WsFormTopicGetTrades(cmdMsg shared.CmdChanMsg) (string, error) {
+// 	//получим аргументы сообщения - это массив строк, первая из которых в данном случае должен быть контракт
+// 	args := cmdMsg.Args
 
-	topic := fmt.Sprintf("publicTrade.%s", contract)
-	return topic
+// 	if len(args) == 0 {
+// 		return "", fmt.Errorf("Ошибка WsFormTopicGetTrades: len(args) ==0")
+// 	}
 
-}
+// 	topic := fmt.Sprintf("publicTrade.%s", args[0])
+// 	return topic, nil
+
+// }
 
 //------- ВСПОМОГАТЕЛЬНЫЕ УНИКАЛЬНЫЕ ФУНКЦИИ КЛИЕНТА ------
 
