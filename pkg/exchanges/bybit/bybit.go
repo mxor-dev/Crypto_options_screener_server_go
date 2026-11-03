@@ -45,6 +45,7 @@ type WsBybitBaseResponse struct {
 	Success bool            `json:"success"` // Статус выполнения: true / false
 	RetMsg  string          `json:"ret_msg"` // Возвращаемое сообщение (например, "subscribe" или текст ошибки)
 	ConnID  string          `json:"conn_id"` // Уникальный ID вашего текущего WebSocket соединения
+	ReqID   string          `json:"req_id"`  // пользоовательский ID который был в изначальном запросе
 	Op      string          `json:"op"`      // Название операции, на которую пришел ответ (например, "subscribe")
 	Topic   string          `json:"topic"`
 	Ts      int64           `json:"ts"`
@@ -852,14 +853,16 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 	} else {
 
 		//базовый ответ
-		var baseResp WsBybitBaseResponse
-		if err := json.Unmarshal(message, &baseResp); err != nil {
+		var resp WsBybitBaseResponse
+		if err := json.Unmarshal(message, &resp); err != nil {
 			slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
 			return
 		}
 
-		// если это ответ на сообщение ping
-		if baseResp.RetMsg == "pong" {
+		switch resp.RetMsg {
+		case "pong":
+			// если это сообщение pong
+
 			slog.Debug("Ws от сервера получен ответ pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
 
 			//передвинем дедлайн
@@ -869,8 +872,39 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 			}
 
 			return
+
+		case "subscribe":
+			//если это ответ на сообщение о подписке
+			// {\"success\":true,\"ret_msg\":\"subscribe\",\"conn_id\":\"dbhf1usmqckqr6btpve0-120x6\",\"req_id\":\"2\",\"op\":\"subscribe\"}"
+
+			//если подписка успешно оформлена
+			if resp.Success {
+				//возьмем вебсокет
+				ws := exchange.Ws[baseEndPoint]
+				ws.Lock()
+
+				//найдем топик по id
+				var topic string
+				for i := range ws.CmdBuffer {
+					if ws.CmdBuffer[i].ID == resp.ReqID {
+						topic = ws.CmdBuffer[i].Topic
+					}
+				}
+				//добавим топик
+				ws.TopicList = append(ws.TopicList, topic)
+				ws.Unlock()
+
+				return
+			}
+
 		}
 
+		switch expression {
+		case condition:
+			***
+		}
+
+		{\"type\":\"snapshot\",\"topic\":\"kline.15.BTCUSDT\",\"data\":[{\"start\":1793748600000,\"end\":1793749499999,\"interval\":\"15\",\"open\":\"77919\",\"close\":\"77804.3\",\"high\":\"77993.1\",\"low\":\"77804.3\",\"volume\":\"91.622619\",\"turnover\":\"7137154.9407247\",\"confirm\":false,\"timestamp\":1793749427563}],\"ts\":1793749427563}"
 		//если это какоето другое сообщение
 		// if isPong == false {
 		// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))

@@ -335,7 +335,7 @@ type LastPriceResponse struct {
 }
 
 type CmdChanMsg struct {
-	Id         string
+	ID         string
 	Action     string
 	Topic      string
 	DeleteTime time.Time

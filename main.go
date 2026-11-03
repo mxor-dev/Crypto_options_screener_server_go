@@ -133,7 +133,7 @@ func main() {
 				LinearDataGetInterval:  2 * time.Second,
 				OptionsDataGetInterval: 2 * time.Second,
 				WsDeadLineDelta:        30 * time.Second,
-				WsCmdMsgDeleteDelta:    10 * time.Second,
+				WsCmdMsgDeleteDelta:    30 * time.Second, //дальше уже вебсокет отключается
 			},
 		},
 		"Mexc": {
@@ -173,6 +173,8 @@ func main() {
 			// Инициализируем пустой слайс для опционов
 			symbolData.OptionsData = []shared.OptionsData{}
 		}
+
+		AllExchanges[exchangeName].Ws = map[string]*shared.WsData{}
 
 		//счетчик ID
 		AllExchanges[exchangeName].GenID = &shared.GenIDMu{}
@@ -245,7 +247,7 @@ func main() {
 				// go workers.SaveSymbolDataToDbTimer(ctx, pool, exchangeVal)
 
 				//запуск воркера для очистки klineData
-				go workers.KlineDataDeleteTimer(ctx, exchangeVal, 10*time.Second)
+				go workers.ExpiredDataDeleteTimer(ctx, exchangeVal, 10*time.Second)
 
 				// запуск воркера для отображения основыных параметров сервера
 				go workers.GetExangeStateTimer(ctx, exchangeVal, 10*time.Second)
@@ -549,7 +551,7 @@ func main() {
 
 				// составим сообщение
 				cmdMsg := shared.CmdChanMsg{
-					Id:         exchange.GenID.Next(),
+					ID:         exchange.GenID.Next(),
 					Action:     "subscribe",
 					Topic:      klineTopik,
 					DeleteTime: time.Now().Add(exchange.FetchIntervals.WsCmdMsgDeleteDelta),

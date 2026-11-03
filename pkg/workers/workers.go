@@ -431,8 +431,8 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 
 //------- СИСТЕМНЫЕ ВОРКЕРЫ ------
 
-// просматривает данные kline на всех биржах и монетах и откоючает те время которых истекло
-func KlineDataDeleteTimer(ctx context.Context, exchange *shared.Exchange, deltaTime time.Duration) {
+// просматривает данные kline на всех биржах и монетах и отключает те время которых истекло
+func ExpiredDataDeleteTimer(ctx context.Context, exchange *shared.Exchange, deltaTime time.Duration) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
@@ -481,6 +481,28 @@ func KlineDataDeleteTimer(ctx context.Context, exchange *shared.Exchange, deltaT
 					}
 					exchange.AllSymbols[j].AllKlineData.Unlock()
 				}
+
+			}
+
+			//для каждого вебсокета
+			for i := range exchange.Ws {
+				ws := exchange.Ws[i]
+				ws.Lock()
+				//для каждой команды
+				var deleteIndexList []int
+				for j := range ws.CmdBuffer {
+					//есл текущее время больше времени удаления
+					if now.After(ws.CmdBuffer[j].DeleteTime) {
+						deleteIndexList = append(deleteIndexList, j)
+					}
+				}
+
+				// удалим элементы в обратном порядке
+				for _, idx := range slices.Backward(deleteIndexList) {
+					// Быстрое удаление со сдвигом элементов (сохраняет порядок в буфере)
+					ws.CmdBuffer = append(ws.CmdBuffer[:idx], ws.CmdBuffer[idx+1:]...)
+				}
+				ws.Unlock()
 
 			}
 
