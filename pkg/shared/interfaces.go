@@ -9,6 +9,9 @@ import (
 
 type Client interface {
 	GetExchangeName() string
+	GetBaseEndpointSpot() string
+	GetBaseEndpointLinear() string
+	ConvertInterval(interval string) (string, error)                                              //конвертирует внешние интервалы во внутренние
 	GetSymbolInfo(symbol string, RestDataGetInterval time.Duration) (SymbolInfo, error)           //получает данные по симвоолу
 	GetKline(contract string, category string, interval string, limit string) ([][]string, error) // получает данные свечей по perpetual или споту
 	GetOptions(symbol string) ([]OptionsData, error)                                              //получает текущие данные по опционам для текущего символа

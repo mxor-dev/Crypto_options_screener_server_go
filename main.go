@@ -133,6 +133,7 @@ func main() {
 				LinearDataGetInterval:  2 * time.Second,
 				OptionsDataGetInterval: 2 * time.Second,
 				WsDeadLineDelta:        30 * time.Second,
+				WsCmdMsgDeleteDelta:    10 * time.Second,
 			},
 		},
 		"Mexc": {
@@ -173,13 +174,8 @@ func main() {
 			symbolData.OptionsData = []shared.OptionsData{}
 		}
 
-		AllExchanges[exchangeName].WsCmdChanSpot = nil
-		AllExchanges[exchangeName].WsCmdChanLinear = nil
-
-		AllExchanges[exchangeName].WsTopicList = &shared.WsTopicListMu{
-			WsTopicListSpot:   []string{},
-			WsTopicListLinear: []string{},
-		}
+		//счетчик ID
+		AllExchanges[exchangeName].GenID = &shared.GenIDMu{}
 
 	}
 
@@ -190,9 +186,7 @@ func main() {
 	//лимит на свечки
 	KlineLimit := "1000"
 
-	//***********************************************************
-	//****** ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ **********
-	//***********************************************************
+	//****** ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ *********************************************************************
 
 	//для каждой биржи
 	for exchangeKey, exchangeVal := range AllExchanges {
@@ -215,18 +209,12 @@ func main() {
 				slog.Warn("Неизвестная биржа", "exchangeName", exchangeKey)
 			}
 
-			//если создан клинет для биржи
+			//если клинет для биржи создан
 			if exchangeVal.Client != nil {
 				//запускаем воркеров
 
 				//получим информацию для всех монет на бирже и сохраним в бд
 				workers.GetAllSymbolsInfo(pool, exchangeVal)
-
-				//получаем данные kline spot для всех монет, всех интервалов
-				// workers.GetKlineDataInitial(exchangeVal, &allKlineIntervals, "spot")
-
-				//получаем данные kline linear для всех монет, всех интервалов
-				// workers.GetKlineDataInitial(exchangeVal, &allKlineIntervals, "linear")
 
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
 				go workers.GetKlineDataTimer(ctx, exchangeVal, KlineDeleteDeltaTime)
@@ -235,15 +223,15 @@ func main() {
 				switch exchangeKey {
 				case "Bybit":
 					//запускаем ws воркера для получения данных по spot
-					exchangeVal.WsCmdChanSpot, err = workers.StartWebSocket(ctx, exchangeVal, "wss://stream.bybit.com/v5/public/spot")
+					err = workers.StartWebSocket(ctx, exchangeVal, exchangeVal.Client.GetBaseEndpointSpot())
 					if err != nil {
-						slog.Error("Ошибка при старте ws worker", "exchangeName", exchangeKey, "baseEndPoint", "wss://stream.bybit.com/v5/public/spot")
+						slog.Error("Ошибка при старте ws worker", "exchangeName", exchangeKey, "baseEndPoint", exchangeVal.Client.GetBaseEndpointSpot())
 					}
 
 					//запускаем ws воркера для получения данных по linear
-					exchangeVal.WsCmdChanLinear, err = workers.StartWebSocket(ctx, exchangeVal, "wss://stream.bybit.com/v5/public/linear")
+					err = workers.StartWebSocket(ctx, exchangeVal, exchangeVal.Client.GetBaseEndpointLinear())
 					if err != nil {
-						slog.Error("Ошибка при старте ws worker", "exchangeName", exchangeKey, "baseEndPoint", "wss://stream.bybit.com/v5/public/linear")
+						slog.Error("Ошибка при старте ws worker", "exchangeName", exchangeKey, "baseEndPoint", exchangeVal.Client.GetBaseEndpointLinear())
 					}
 
 				case "Mexc":
@@ -485,7 +473,7 @@ func main() {
 		slog.Debug("Получен запрос POST", "url", "/api/last_candle", "req", req)
 
 		//проверим есть ли такая биржа
-		_, ok := AllExchanges[req.ExchangeName]
+		exchange, ok := AllExchanges[req.ExchangeName]
 		if !ok {
 			slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/kline_data", "req", req)
 
@@ -498,76 +486,109 @@ func main() {
 		switch req.ExchangeName {
 		case "Bybit":
 
+			//конвертируем интервал во внутренний
+			intervalConverted, err := AllExchanges["Bybit"].Client.ConvertInterval(req.Interval)
+			if err != nil {
+				slog.Error("Ошибка не удалось конвертировать интервал", "url", "/api/kline_data", "req", req)
+
+				// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка сервера"})
+				return
+			}
+			//получим вебсокет
+			var ws *shared.WsData
 			switch req.Category {
 			case "spot":
+				//получим ws спота
+				ws, ok = exchange.Ws[exchange.Client.GetBaseEndpointSpot()]
+				if !ok {
+					slog.Error("Не удалось найти ws spot", "url", "/api/kline_data", "req", req)
 
-				//получим список топиков для спота
-				AllExchanges[req.ExchangeName].WsTopicList.RLock()
-				WsTopicListSpot := AllExchanges[req.ExchangeName].WsTopicList.WsTopicListSpot
-				AllExchanges[req.ExchangeName].WsTopicList.RUnlock()
-
-				// если категория spot не содержит запись о подписке
-				if !slices.Contains(WsTopicListSpot, fmt.Sprintf("publicTrade.%s", req.Contract)) {
-					slog.Warn("Топик не открыт", "url", "/api/kline_data", "req", req)
-
-					if AllExchanges[req.ExchangeName].WsCmdChanSpot == nil {
-						slog.Warn("Канал для управления ws не определен", "url", "/api/kline_data", "req", req)
-						// если категория не определена
-						c.JSON(http.StatusBadRequest, gin.H{"error": "Канал для управления ws не определен"})
-						return
-					}
-
-					// составим сообщение
-					msg := shared.CmdChanMsg{
-						Action: "subscribe",
-						Topic:  fmt.Sprintf("publicTrade.%s", req.Contract),
-					}
-
-					// Отправляем сообщение в канал управления ws
-					AllExchanges[req.ExchangeName].WsCmdChanSpot <- msg
-
-					key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, req.Interval)
-					AllExchanges[req.ExchangeName].AllSymbols[req.Symbol].AllKlineData.RLock()
-					KlineDataMu, ok := AllExchanges[req.ExchangeName].AllSymbols[req.Symbol].AllKlineData.KlineDataMap[key]
-					AllExchanges[req.ExchangeName].AllSymbols[req.Symbol].AllKlineData.RUnlock()
-
-					//если записи данных kline для текущего ключа не существует
-					if !ok {
-						//запустим получение данных kline для текущего запроса
-						workers.GetKlineData(AllExchanges[req.ExchangeName], req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit, KlineDeleteDeltaTime)
-
-						//дадим пустой ответ
-						//дадим ответ
-						c.JSON(http.StatusOK, gin.H{
-							"status": "success",
-							"data":   "",
-						})
-
-						return
-					}
-
-					//получим данные последней свечки
-					KlineDataMu.Lock()
-					last_candle := KlineDataMu.KlineData.LastCandle
-					KlineDataMu.Unlock()
-
-					//дадим ответ
-					c.JSON(http.StatusOK, gin.H{
-						"status": "success",
-						"data":   last_candle,
-					})
-
+					//если не удаеться найти
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка сервера"})
 					return
 				}
-				//
+
 			case "perpetual", "futures":
-				// если категория perpetual или futures
-				// в Go можно перечислять несколько условий через запятую (аналог ||)
+				//получим ws спота
+				ws, ok = exchange.Ws[exchange.Client.GetBaseEndpointLinear()]
+				if !ok {
+					slog.Error("Не удалось найти ws linear", "url", "/api/kline_data", "req", req)
+
+					//если не удаеться найти
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка сервера"})
+					return
+				}
 
 			default:
 				slog.Error("Ошибка в запросе: такой категории не существует", "url", "/api/kline_data", "req", req)
 				// если категория не определена
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой категории не существует"})
+				return
+			}
+
+			//получим текущий список топиков для вебсокета
+			ws.Lock()
+			topicListCopy := make([]string, len(ws.TopicList))
+			copy(topicListCopy, ws.TopicList)
+			ws.Unlock()
+
+			//сформируем топик
+			klineTopik := fmt.Sprintf("kline.%s.%s", intervalConverted, req.Contract)
+
+			// если категория spot не содержит запись о подписке
+			if !slices.Contains(topicListCopy, klineTopik) {
+				slog.Warn("Топик не открыт", "url", "/api/kline_data", "req", req)
+
+				if ws.CmdChan == nil {
+					slog.Warn("Канал для управления ws не определен", "url", "/api/kline_data", "req", req)
+					// если категория не определена
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Канал для управления ws не определен"})
+					return
+				}
+
+				// составим сообщение
+				cmdMsg := shared.CmdChanMsg{
+					Id:         exchange.GenID.Next(),
+					Action:     "subscribe",
+					Topic:      klineTopik,
+					DeleteTime: time.Now().Add(exchange.FetchIntervals.WsCmdMsgDeleteDelta),
+				}
+
+				// Отправляем сообщение в канал управления ws
+				ws.CmdChan <- cmdMsg
+
+				key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, req.Interval)
+				exchange.AllSymbols[req.Symbol].AllKlineData.RLock()
+				KlineDataMu, ok := exchange.AllSymbols[req.Symbol].AllKlineData.KlineDataMap[key]
+				exchange.AllSymbols[req.Symbol].AllKlineData.RUnlock()
+
+				//если записи данных kline для текущего ключа не существует
+				if !ok {
+					//запустим получение данных kline для текущего запроса
+					workers.GetKlineData(exchange, req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit, KlineDeleteDeltaTime)
+
+					//дадим пустой ответ
+					//дадим ответ
+					c.JSON(http.StatusOK, gin.H{
+						"status": "success",
+						"data":   "",
+					})
+
+					return
+				}
+
+				//получим данные последней свечки
+				KlineDataMu.Lock()
+				last_candle := KlineDataMu.KlineData.LastCandle
+				KlineDataMu.Unlock()
+
+				//дадим ответ
+				c.JSON(http.StatusOK, gin.H{
+					"status": "success",
+					"data":   last_candle,
+				})
+
 				return
 			}
 

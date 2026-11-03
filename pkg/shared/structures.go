@@ -16,10 +16,9 @@ type Exchange struct {
 	FetchIntervals FetchIntervals
 	Client         Client
 
-	WsCmdChanSpot   chan CmdChanMsg
-	WsCmdChanLinear chan CmdChanMsg
+	Ws map[string]*WsData
 
-	WsTopicList *WsTopicListMu
+	GenID *GenIDMu
 }
 
 // символы
@@ -274,6 +273,7 @@ type FetchIntervals struct {
 	LinearDataGetInterval  time.Duration
 	OptionsDataGetInterval time.Duration
 	WsDeadLineDelta        time.Duration
+	WsCmdMsgDeleteDelta    time.Duration
 }
 
 type SymbolDataToDb struct {
@@ -335,12 +335,34 @@ type LastPriceResponse struct {
 }
 
 type CmdChanMsg struct {
-	Action string
-	Topic  string
+	Id         string
+	Action     string
+	Topic      string
+	DeleteTime time.Time
 }
 
+type WsData struct {
+	CmdChan   chan CmdChanMsg
+	TopicList []string
+	CmdBuffer []CmdChanMsg
+	sync.Mutex
+}
 type WsTopicListMu struct {
 	WsTopicListSpot   []string
 	WsTopicListLinear []string
 	sync.RWMutex
+}
+
+type GenIDMu struct {
+	mu      sync.Mutex
+	counter int
+}
+
+func (g *GenIDMu) Next() string {
+	g.mu.Lock()
+	g.counter++ // Увеличиваем
+	val := g.counter
+	g.mu.Unlock()
+
+	return strconv.Itoa(val) // Быстро переводим в строку
 }

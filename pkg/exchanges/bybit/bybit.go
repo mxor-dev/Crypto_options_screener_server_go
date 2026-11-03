@@ -22,11 +22,64 @@ import (
 // базовая точка доступа
 const baseEndPont = "https://api.bybit.com"
 
-// ------- СТРУКТУРА ------
+// ------- СТРУКТУРА КЛИЕНТА ------
 type BybitClient struct {
-	ExchangeName string
-	apiKey       string
-	apiSecret    string
+	ExchangeName         string
+	apiKey               string
+	apiSecret            string
+	Intervals            map[string]string
+	WsBaseEndpointSpot   string
+	WsBaseEndpointLinear string
+}
+
+// ------- СТРУКТУРS ДЛЯ WS ------
+
+// Краткая структура для извлечения только признаков pong
+// type WsPongResponse struct {
+// 	RetMsg string `json:"ret_msg"`
+// 	Op     string `json:"op"`
+// }
+
+// структура ответ на запрос subscribe/unsubscribe
+type WsBybitBaseResponse struct {
+	Success bool            `json:"success"` // Статус выполнения: true / false
+	RetMsg  string          `json:"ret_msg"` // Возвращаемое сообщение (например, "subscribe" или текст ошибки)
+	ConnID  string          `json:"conn_id"` // Уникальный ID вашего текущего WebSocket соединения
+	Op      string          `json:"op"`      // Название операции, на которую пришел ответ (например, "subscribe")
+	Topic   string          `json:"topic"`
+	Ts      int64           `json:"ts"`
+	Type    string          `json:"type"` // "snapshot" или "delta"
+	Data    json.RawMessage `json:"data"`
+}
+
+// type WsBybitDataResponse struct {
+// 	Topic string          `json:"topic"`
+// 	Ts    int64           `json:"ts"`
+// 	Type  string          `json:"type"` // "snapshot" или "delta"
+// 	Data  json.RawMessage `json:"data"`
+// }
+
+type WsBybitTradeItem struct {
+	ID        string `json:"i"`   // ID сделки
+	Timestamp int64  `json:"T"`   // Время сделки (Unix timestamp в миллисекундах)
+	Price     string `json:"p"`   // Цена сделки (прилетает строкой, например "77719.3")
+	Volume    string `json:"v"`   // Объем сделки (прилетает строкой, например "0.000643")
+	Side      string `json:"S"`   // Сторона: "Buy" или "Sell"
+	Seq       int64  `json:"seq"` // Последовательный номер (Sequence)
+	Symbol    string `json:"s"`   // Торговая пара, например "BTCUSDT"
+	BT        bool   `json:"BT"`  // Является ли блочной сделкой (Block Trade)
+	RPI       bool   `json:"RPI"` // Розничный индекс (Retail Price Index)
+}
+type WsBybitTradeItemShort struct {
+	Price string `json:"p"` // Цена сделки (прилетает строкой, например "77719.3")
+}
+
+type WsBybitKlineItem struct {
+	Start int64  `json:"start"` // Timestamp начала свечи (мс) -> T
+	Open  string `json:"open"`  // Цена открытия -> O
+	High  string `json:"high"`  // Максимальная цена -> H
+	Low   string `json:"low"`   // Минимальная цена -> L
+	Close string `json:"close"` // Цена закрытия -> C
 }
 
 // ------- КОНСТРУКТОР ------
@@ -35,6 +88,15 @@ func New(apiKey string, apiSecret string) *BybitClient {
 		ExchangeName: "Bybit",
 		apiKey:       apiKey,
 		apiSecret:    apiSecret,
+		Intervals: map[string]string{
+			"5m":  "5",
+			"15m": "15",
+			"1h":  "60",
+			"1D":  "D",
+			"1W":  "W",
+		},
+		WsBaseEndpointSpot:   "wss://stream.bybit.com/v5/public/spot",
+		WsBaseEndpointLinear: "wss://stream.bybit.com/v5/public/linear",
 	}
 }
 
@@ -43,6 +105,27 @@ func New(apiKey string, apiSecret string) *BybitClient {
 // получает ися биржи из клиента
 func (b *BybitClient) GetExchangeName() string {
 	return b.ExchangeName
+}
+
+// конвертирует внешние интервалы во внутренние
+func (b *BybitClient) ConvertInterval(interval string) (string, error) {
+
+	result, ok := b.Intervals[interval]
+	if !ok {
+		return "", fmt.Errorf("Ошибка конвертации интервала для биржи %s: неизвестный интервал %s", b.ExchangeName, interval)
+	}
+
+	return result, nil
+}
+
+// получает базовую точку для вебсокета
+func (b *BybitClient) GetBaseEndpointSpot() string {
+	return b.WsBaseEndpointSpot
+}
+
+// получает базовую точку для вебсокета
+func (b *BybitClient) GetBaseEndpointLinear() string {
+	return b.WsBaseEndpointLinear
 }
 
 // получает информацию по всем символам
@@ -286,17 +369,8 @@ func (b *BybitClient) GetKline(contract string, category string, interval string
 
 	slog.Info("Запрос данных kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "contract", contract, "category", category, "interval", interval)
 
-	//массив для конвертации интервала
-	intervals := map[string]string{
-		"5m":  "5",
-		"15m": "15",
-		"1h":  "60",
-		"1D":  "D",
-		"1W":  "W",
-	}
-
 	//конвертируем интервал
-	intervalConverted := intervals[interval]
+	intervalConverted := b.Intervals[interval]
 
 	//конвертируем категории
 	categoryConverted := category
@@ -777,14 +851,15 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 		slog.Debug("Ws переподключен", "ExchangeName", exchange.ExchangeName)
 	} else {
 
-		//проверим может это сигнал Pong
-		isPong, err := WsDecodePong(message)
-		if err != nil {
-			slog.Error("Ws ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "error", err, "message", string(message))
+		//базовый ответ
+		var baseResp WsBybitBaseResponse
+		if err := json.Unmarshal(message, &baseResp); err != nil {
+			slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
+			return
 		}
-		//если пришло сообщение pong (в ответ на наш ping)
-		if isPong == true {
 
+		// если это ответ на сообщение ping
+		if baseResp.RetMsg == "pong" {
 			slog.Debug("Ws от сервера получен ответ pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
 
 			//передвинем дедлайн
@@ -793,15 +868,70 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 				slog.Error("Ws ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "error", err)
 			}
 
-			//пропускаем остаток цикла
 			return
 		}
 
 		//если это какоето другое сообщение
-		if isPong == false {
-			slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
+		// if isPong == false {
+		// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
 
-		}
+		// //ответ на операцию subscribe/unsubscribe и другие
+		// var opResp WsBybitOpResponseStatus
+		// if err := json.Unmarshal(message, &opResp); err != nil {
+		// 	slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
+		// 	return
+		// }
+		// switch {
+		// case strings.HasPrefix(opResp.Topic, "publicTrade"):
+		// 	//если получены сделки
+		// 	var trades []WsBybitTradeItemShort
+		// 	if err := json.Unmarshal(opResp.Data, &trades); err != nil {
+		// 		slog.Error("Ошибка парсинга сделок", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
+
+		// 	}
+		// 	// Логика обработки сде
+		// }
+
+		//ответ с данными
+		// var baseResp WsBybitDataResponse
+		// if err := json.Unmarshal(message, &baseResp); err != nil {
+		// 	slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
+		// 	return
+		// }
+
+		// // Запускаем проверку топика. Используем strings.HasPrefix,
+		// // так как в конце топика всегда идет имя монеты (например, .BTCUSDT)
+		// switch {
+		// case strings.HasPrefix(baseResp.Topic, "publicTrade"):
+		// 	//если получены сделки
+		// 	var trades []WsBybitTradeItemShort
+		// 	if err := json.Unmarshal(baseResp.Data, &trades); err != nil {
+		// 		slog.Error("Ошибка парсинга сделок", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
+
+		// 	}
+		// 	// Логика обработки сделок
+		// 	slog.Info("Получены сделки", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "trades", trades)
+
+		// case strings.HasPrefix(baseResp.Topic, "kline"):
+		// 	//если получена последняя свеча kline
+
+		// 	// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
+
+		// 	var klines []WsBybitKlineItem
+		// 	if err := json.Unmarshal(baseResp.Data, &klines); err != nil {
+		// 		slog.Error("Ошибка парсинга последней свечи Kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
+
+		// 	}
+
+		// 	// Логика обработки последних свечей
+		// 	slog.Info("Получена последняя свечка kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "klines", klines)
+
+		// 	return
+		// }
+
+		slog.Warn("Ws сообщение не обработано", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
+
+		// }
 	}
 }
 
@@ -822,28 +952,23 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 //------- ВСПОМОГАТЕЛЬНЫЕ УНИКАЛЬНЫЕ ФУНКЦИИ КЛИЕНТА ------
 
 // локальная функция декодирует ответ понг сервера
-func WsDecodePong(message []byte) (bool, error) {
-	// Краткая структура для извлечения только признаков pong
-	type PongResponse struct {
-		RetMsg string `json:"ret_msg"`
-		Op     string `json:"op"`
-	}
+// func WsDecodePong(message []byte) (bool, error) {
 
-	var resp PongResponse
+// 	var resp WsPongResponse
 
-	// Десериализуем JSON. Если это рыночные данные другого формата,
-	// unmarshal может выдать ошибку или просто оставить поля пустыми.
-	if err := json.Unmarshal(message, &resp); err != nil {
-		return false, err
-	}
+// 	// Десериализуем JSON. Если это рыночные данные другого формата,
+// 	// unmarshal может выдать ошибку или просто оставить поля пустыми.
+// 	if err := json.Unmarshal(message, &resp); err != nil {
+// 		return false, err
+// 	}
 
-	// Проверяем, совпадает ли хотя бы одно поле с признаком pong
-	if resp.RetMsg == "pong" {
-		return true, nil
-	}
+// 	// Проверяем, совпадает ли хотя бы одно поле с признаком pong
+// 	if resp.RetMsg == "pong" {
+// 		return true, nil
+// 	}
 
-	return false, nil
-}
+// 	return false, nil
+// }
 
 // вытаскивает из сообщения значение lastPrice
 func (b *BybitClient) WsDecodeLinearLastPrice(message []byte) (shared.LastPriceResponse, error) {

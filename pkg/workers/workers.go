@@ -551,13 +551,22 @@ func GetExangeStateTimer(ctx context.Context, exchange *shared.Exchange, deltaTi
 				}
 				exchange.AllSymbols[i].AllKlineData.RUnlock()
 
-				exchange.WsTopicList.RLock()
-				WsTopicListSpot := exchange.WsTopicList.WsTopicListSpot
-				WsTopicListLinear := exchange.WsTopicList.WsTopicListLinear
-				exchange.WsTopicList.RUnlock()
+				slog.Debug("Запрашиваемые Klines", "ExchangeName", exchange.ExchangeName, "Symbol", exchange.AllSymbols[i].Symbol, "KlineDataMapKeys", KlineDataMapKeys)
+			}
 
-				//список каналов
-				slog.Debug("Состояние основных переменных", "ExchangeName", exchange.ExchangeName, "Symbol", exchange.AllSymbols[i].Symbol, "KlineDataMapKeys", KlineDataMapKeys, "WsTopicListSpot", WsTopicListSpot, "WsTopicListLinear", WsTopicListLinear)
+			//для подключенных вебсокетов
+			for baseEndPoint := range exchange.Ws {
+
+				ws := exchange.Ws[baseEndPoint]
+
+				ws.Lock()
+				topicListCopy := make([]string, len(ws.TopicList))
+				copy(topicListCopy, ws.TopicList)
+				cmdBufferCopy := make([]shared.CmdChanMsg, len(ws.CmdBuffer))
+				copy(cmdBufferCopy, ws.CmdBuffer)
+				ws.Unlock()
+
+				slog.Debug("Состояние ws", "ExchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "TopicList", topicListCopy, "CmdBuffer", cmdBufferCopy)
 
 			}
 

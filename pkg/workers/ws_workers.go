@@ -12,17 +12,24 @@ import (
 )
 
 // запуск универсального вебсокета
-func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint string) (chan shared.CmdChanMsg, error) {
+func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint string) error {
 	//  канал управления подписками (буферизованный, чтобы не блокировать вызывающий код)
 	cmdChan := make(chan shared.CmdChanMsg, 100)
 
 	// подключаемся к вебсокету
 	conn, _, err := websocket.DefaultDialer.Dial(baseEndPoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка подключения к ws: %w", err)
+		return fmt.Errorf("ошибка подключения к ws: %w", err)
 	}
 
 	slog.Info("Ws установлено соединение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
+
+	//созадим запись для для вебсокета внтури биржи
+	exchange.Ws[baseEndPoint] = &shared.WsData{
+		CmdChan:   cmdChan,
+		TopicList: []string{},
+		CmdBuffer: []shared.CmdChanMsg{},
+	}
 
 	//канал для остановки пинга
 	pingStopChan := make(chan struct{})
@@ -96,10 +103,28 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint
 						//запустим воркер для пинга к серверу по интервалу на новом соединении и сновым каналом остановки
 						go exchange.Client.WsPingTimer(ctx, conn, pingStopChan, exchange.ExchangeName, baseEndPoint)
 
-						//подпишемся на каналы в соответствии с открытыми каналами
-						// if err := conn.WriteJSON(req); err != nil {
-						// 	slog.Error("Ошибка подписки по ws", "exchangeName", exchange.ExchangeName, "error", err)
-						// }
+						//текущий вебсокет
+						ws := exchange.Ws[baseEndPoint]
+
+						//копируем топики под мьютексом во временный слайс
+						ws.Lock()
+						topicsCopy := make([]string, len(ws.TopicList))
+						copy(topicsCopy, ws.TopicList)
+						ws.Unlock()
+
+						//для каждого топика
+						for _, topic := range topicsCopy {
+							//сформируем команду
+							newCmd := shared.CmdChanMsg{
+								Id:         exchange.GenID.Next(), //там внутри тоже мьютекс
+								Action:     "subscribe",
+								Topic:      topic,
+								DeleteTime: time.Now().Add(exchange.FetchIntervals.WsCmdMsgDeleteDelta),
+							}
+
+							// передадим нанные в канал управления
+							ws.CmdChan <- newCmd
+						}
 
 						//отановим таймер подключения
 						ticker.Stop()
@@ -124,29 +149,55 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint
 		}
 	}()
 
-	// 4. Горутина-менеджер (управление подписками)
+	// Горутина-менеджер (управление подписками)
 	go func() {
 		defer conn.Close()
 		slog.Info("Ws запущен канал управления подписками", "ExchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
 
+		//прочитаем сообщения - они приходят по универсальному каналу
 		for cmdMsg := range cmdChan {
 
 			slog.Warn("Ws получено управляющее сообщение", "ExchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "cmdMsg", cmdMsg)
-			// // Формируем JSON-запрос по спецификации клиента
-			// request := exchange.Client.WsFormTopicGetTrades(cmdMsg)
 
-			// // Отправляем в вебсокет
-			// err := conn.WriteJSON(request)
-			// if err != nil {
-			// 	slog.Error("Ошибка отправки запроса в WS", "topic", cmd, "err", err)
-			// 	return
-			// }
-			// slog.Info("Запрос отправлен в WS", "op", cmd, "topic", cmd)
+			switch exchange.ExchangeName {
+			case "Bybit":
+
+				type WsMessageBibyt struct {
+					ReqID string   `json:"req_id,omitempty"`
+					Op    string   `json:"op"`
+					Args  []string `json:"args"`
+				}
+
+				//если поулчена команда подписаться
+				if cmdMsg.Action == "subscribe" {
+
+					msg := WsMessageBibyt{
+						ReqID: exchange.GenID.Next(),
+						Op:    cmdMsg.Action,
+						Args:  []string{cmdMsg.Topic},
+					}
+
+					//запишем изначальную команду в буфер отправленных сообщений
+					exchange.Ws[baseEndPoint].Lock()
+					exchange.Ws[baseEndPoint].CmdBuffer = append(exchange.Ws[baseEndPoint].CmdBuffer, cmdMsg)
+					exchange.Ws[baseEndPoint].Unlock()
+
+					// Отправляем в вебсокет
+					err := conn.WriteJSON(msg)
+					if err != nil {
+						slog.Error("Ошибка отправки запроса в WS", "cmdMsg", cmdMsg, "err", err)
+
+					}
+					slog.Info("Запрос отправлен в WS", "op", cmdMsg, "cmdMsg", cmdMsg)
+				}
+
+			}
+
 		}
 	}()
 
 	// Возвращаем канал наружу, чтобы другие горутины могли отправлять туда команды
-	return cmdChan, nil
+	return nil
 }
 
 // запускает базового воркера для получения данных с определенного канала
