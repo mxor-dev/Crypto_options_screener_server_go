@@ -131,6 +131,7 @@ func main() {
 				RestDataGetInterval:    200 * time.Millisecond,
 				LinearDataGetInterval:  2 * time.Second,
 				OptionsDataGetInterval: 2 * time.Second,
+				WsDeadLineDelta:        30 * time.Second,
 			},
 		},
 		"Mexc": {

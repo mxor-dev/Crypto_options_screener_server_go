@@ -270,6 +270,7 @@ type FetchIntervals struct {
 	RestDataGetInterval    time.Duration
 	LinearDataGetInterval  time.Duration
 	OptionsDataGetInterval time.Duration
+	WsDeadLineDelta        time.Duration
 }
 
 type SymbolDataToDb struct {

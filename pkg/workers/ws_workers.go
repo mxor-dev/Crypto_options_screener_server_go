@@ -10,7 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint string) (chan string, error) {
+func StartWebSocket(ctx context.Context, exchange *shared.Exchange, purpose string, baseEndPoint string) (chan string, error) {
 	//  канал управления подписками (буферизованный, чтобы не блокировать вызывающий код)
 	subChan := make(chan string, 100)
 
@@ -117,33 +117,8 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint
 
 			// slog.Debug("Получено сообщение от сервера", "string(message)", string(message))
 
-			//еcли ответ не нулевой - такое бывает при переподключении
-			if string(message) != "" {
-
-				isPong, err := exchange.Client.WsDecodePong(message)
-				if err != nil {
-					slog.Error("Ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "error", err)
-					slog.Error("Полное сообщение от сервера", "string(message)", string(message))
-				}
-				//если пришло сообщение pong (в ответ на наш ping)
-				if isPong == true {
-
-					slog.Info("От сервера получен ответ pong", "exchangeName", exchange.ExchangeName)
-
-					//отключим дедлайн
-					conn.SetReadDeadline(time.Time{})
-
-					//пропускаем остаток цикла
-					continue
-				}
-
-				//если это какоето другое сообщение
-				if isPong == false {
-					//отправим сообщение на внешний канал
-					*********
-
-				}
-			}
+			//любой ответ передаем обработчику сообщений конкретного клиента, он дальше разбераеться что пришло с учетом особенностей биржи
+			exchange.Client.WsDecodeMessage(exchange, purpose, baseEndPoint, conn, message)
 		}
 	}()
 
