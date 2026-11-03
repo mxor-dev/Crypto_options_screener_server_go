@@ -82,7 +82,7 @@ func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
 }
 
 // получает данные kline и сохраняет их в общем объекте
-func GetKlineData(exchange *shared.Exchange, symbol string, contract string, category string, interval string, limit string) {
+func GetKlineData(exchange *shared.Exchange, symbol string, contract string, category string, interval string, limit string, KlineDeleteDeltaTime time.Duration) {
 
 	//получим данные
 	klines, err := exchange.Client.GetKline(contract, category, interval, limit)
@@ -98,46 +98,67 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 	}
 	//получим ключ
 	key := fmt.Sprintf("%s:%s:%s", contract, category, interval)
-
-	//блокируем для чтения
 	exchange.AllSymbols[symbol].AllKlineData.RLock()
-	//получим запись
 	KlineData, ok := exchange.AllSymbols[symbol].AllKlineData.KlineDataMap[key]
-	//разблокируем
 	exchange.AllSymbols[symbol].AllKlineData.RUnlock()
 
 	//если запись не существует
 	if !ok {
-		slog.Error("Ошибка сохранения данных klines: записи exchange.AllSymbols[symbol].KlineData.KlineDataMap[key] не существет", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval, "err", err)
-		return
+		slog.Warn("Записи exchange.AllSymbols[symbol].KlineData.KlineDataMap[key] не существует", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval)
+
+		//создадим данные с таким ключом
+		exchange.AllSymbols[symbol].AllKlineData.Lock()
+
+		//сделаем пустой объект с мьютексом
+		exchange.AllSymbols[symbol].AllKlineData.KlineDataMap[key] = &shared.KlineDataMu{}
+
+		//заполним внутренний объект начальными значениями
+		exchange.AllSymbols[symbol].AllKlineData.KlineDataMap[key].KlineData = shared.KlineData{
+			Contract: contract,
+			Category: category,
+			Interval: interval,
+
+			Klines:     [][]string{},
+			LastCandle: []string{},
+
+			DeleteTime: time.Now().Add(KlineDeleteDeltaTime),
+		}
+		exchange.AllSymbols[symbol].AllKlineData.Unlock()
+
+		//еще раз получим уже существующие данные
+		KlineData, _ = exchange.AllSymbols[symbol].AllKlineData.KlineDataMap[key]
+
+		slog.Info("Создана запись exchange.AllSymbols[symbol].KlineData.KlineDataMap[key]", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval)
+
 	}
+
 	//сохраним данные
 	KlineData.SaveKlines(klines)
 
 }
 
 // получает разово данные kline для всех монет и всех интервалов и сохранеет их в БД
-func GetKlineDataInitial(exchange *shared.Exchange, allKlineIntervals []string, symbol string, contract string, category string, limit string) {
+// func GetKlineDataInitial(exchange *shared.Exchange, allKlineIntervals []string, symbol string, contract string, category string, limit string) {
 
-	slog.Debug("Данные интервалов", "allKlineIntervals", allKlineIntervals)
-	slog.Debug("Пауза между запросами", "exchange.FetchIntervals.RestDataGetInterval", exchange.FetchIntervals.RestDataGetInterval)
+// 	slog.Debug("Данные интервалов", "allKlineIntervals", allKlineIntervals)
+// 	slog.Debug("Пауза между запросами", "exchange.FetchIntervals.RestDataGetInterval", exchange.FetchIntervals.RestDataGetInterval)
 
-	//для каждого интервала
-	for i := range allKlineIntervals {
-		slog.Debug("Интервал", "i", i)
-		//получим данные и сохраним их
-		GetKlineData(exchange, symbol, contract, category, allKlineIntervals[i], limit)
+// 	//для каждого интервала
+// 	for i := range allKlineIntervals {
+// 		slog.Debug("Интервал", "i", i)
+// 		//получим данные и сохраним их
+// 		GetKlineData(exchange, symbol, contract, category, allKlineIntervals[i], limit)
 
-		//сделаем паузу между запросами
-		time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-	}
+// 		//сделаем паузу между запросами
+// 		time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+// 	}
 
-}
+// }
 
 //------- REST ВОРКЕРЫ ------
 
 // получает данные с определенным интервалом и записывает их в бд
-func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
+func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange, KlineDeleteDeltaTime time.Duration) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
@@ -194,6 +215,7 @@ func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
 								KlineDataMap[j].KlineData.Category,
 								KlineDataMap[j].KlineData.Interval,
 								"1000",
+								KlineDeleteDeltaTime,
 							)
 							//сделаем паузу между запросами
 							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
@@ -229,6 +251,7 @@ func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
 									KlineDataMap[j].KlineData.Category,
 									KlineDataMap[j].KlineData.Interval,
 									"1000",
+									KlineDeleteDeltaTime,
 								)
 								//сделаем паузу между запросами
 								time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
@@ -409,19 +432,18 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 //------- СИСТЕМНЫЕ ВОРКЕРЫ ------
 
 // просматривает данные kline на всех биржах и монетах и откоючает те время которых истекло
-func KlineDataDeleteTimer(ctx context.Context, allExchanges map[string]*shared.Exchange) {
+func KlineDataDeleteTimer(ctx context.Context, exchange *shared.Exchange, deltaTime time.Duration) {
 
-	slog.Info("Запуск воркера")
+	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
-	//создадим тикер который каждые 1 секунду будет срабатывать
-	ticker := time.NewTicker(10 * time.Second)
+	//создадим тикер который каждые * секунду будет срабатывать
+	ticker := time.NewTicker(deltaTime)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Таймер остановлен")
+		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
 	}()
 
-	//переменная для остановке
-
+	//основной цикл
 	for {
 		select {
 		//если тикер дал тик
@@ -432,36 +454,34 @@ func KlineDataDeleteTimer(ctx context.Context, allExchanges map[string]*shared.E
 			//получим текущее время
 			now := time.Now().UTC()
 
-			//для каждой биржы
-			for i := range allExchanges {
-				//для каждого символа
-				for j := range allExchanges[i].AllSymbols {
-					//ключи для удаления
-					var keysToDelete []string
+			//для каждого символа
+			for j := range exchange.AllSymbols {
+				//ключи для удаления
+				var keysToDelete []string
 
-					//блокируем мапу для чтения
-					allExchanges[i].AllSymbols[j].AllKlineData.RLock()
-					for k, klineMu := range allExchanges[i].AllSymbols[j].AllKlineData.KlineDataMap {
-						klineMu.Lock()
-						//проверим что текущее время больше записанного
-						if now.After(klineMu.KlineData.DeleteTime) {
-							//запишем ключ
-							keysToDelete = append(keysToDelete, k)
-						}
-						klineMu.Unlock()
+				//блокируем мапу для чтения
+				exchange.AllSymbols[j].AllKlineData.RLock()
+				for k, klineMu := range exchange.AllSymbols[j].AllKlineData.KlineDataMap {
+					klineMu.Lock()
+					//проверим что текущее время больше записанного
+					if now.After(klineMu.KlineData.DeleteTime) {
+						//запишем ключ
+						keysToDelete = append(keysToDelete, k)
 					}
-					allExchanges[i].AllSymbols[j].AllKlineData.RUnlock()
-
-					//если есть ключи для удаления
-					if len(keysToDelete) > 0 {
-						allExchanges[i].AllSymbols[j].AllKlineData.Lock()
-						for _, k := range keysToDelete {
-							delete(allExchanges[i].AllSymbols[j].AllKlineData.KlineDataMap, k)
-							slog.Info("Запись kline удалена по истечению времени", "KlineDataMap[k]", allExchanges[i].AllSymbols[j].AllKlineData.KlineDataMap[k])
-						}
-						allExchanges[i].AllSymbols[j].AllKlineData.Unlock()
-					}
+					klineMu.Unlock()
 				}
+				exchange.AllSymbols[j].AllKlineData.RUnlock()
+
+				//если есть ключи для удаления
+				if len(keysToDelete) > 0 {
+					exchange.AllSymbols[j].AllKlineData.Lock()
+					for _, k := range keysToDelete {
+						delete(exchange.AllSymbols[j].AllKlineData.KlineDataMap, k)
+						slog.Info("Запись kline удалена по истечению времени", "KlineDataMap[k]", exchange.AllSymbols[j].AllKlineData.KlineDataMap[k])
+					}
+					exchange.AllSymbols[j].AllKlineData.Unlock()
+				}
+
 			}
 
 		//если работа программы остановлены
@@ -473,13 +493,13 @@ func KlineDataDeleteTimer(ctx context.Context, allExchanges map[string]*shared.E
 	}
 }
 
-// воркер раз в 10 сек показывает размер объекта
-func GetMemStatsTimer(ctx context.Context, exchange *shared.Exchange) {
+// воркер раз в * сек показывает размер объекта
+func GetMemStatsTimer(ctx context.Context, exchange *shared.Exchange, deltaTime time.Duration) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
 	//создадим тикер который каждые 10 секунд будет срабатывать
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(deltaTime)
 	defer func() {
 		ticker.Stop()
 		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
@@ -494,6 +514,52 @@ func GetMemStatsTimer(ctx context.Context, exchange *shared.Exchange) {
 			runtime.ReadMemStats(&m)
 
 			slog.Warn("Метрики памяти", "Alloc_MB", float64(m.Alloc)/1024/1024, "Sys_MB", float64(m.Sys)/1024/1024, "HeapObjects", m.HeapObjects)
+
+		case <-ctx.Done():
+			// Завершаем работу функции по контексту - все defer отрабатают автоматически
+			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
+			return
+		}
+	}
+}
+
+// воркер раз в * сек показывает состояние выбранных параметров биржи
+func GetExangeStateTimer(ctx context.Context, exchange *shared.Exchange, deltaTime time.Duration) {
+
+	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
+
+	//создадим тикер который каждые * секунд будет срабатывать
+	ticker := time.NewTicker(deltaTime)
+	defer func() {
+		ticker.Stop()
+		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
+	}()
+
+	for {
+		select {
+		//если тикер дал тик
+		case <-ticker.C:
+			//для каждого символа
+			for i := range exchange.AllSymbols {
+
+				var KlineDataMapKeys []string
+
+				exchange.AllSymbols[i].AllKlineData.RLock()
+				KlineDataMap := exchange.AllSymbols[i].AllKlineData.KlineDataMap
+				for key := range KlineDataMap {
+					KlineDataMapKeys = append(KlineDataMapKeys, key)
+				}
+				exchange.AllSymbols[i].AllKlineData.RUnlock()
+
+				exchange.WsTopicList.RLock()
+				WsTopicListSpot := exchange.WsTopicList.WsTopicListSpot
+				WsTopicListLinear := exchange.WsTopicList.WsTopicListLinear
+				exchange.WsTopicList.RUnlock()
+
+				//список каналов
+				slog.Debug("Состояние основных переменных", "ExchangeName", exchange.ExchangeName, "Symbol", exchange.AllSymbols[i].Symbol, "KlineDataMapKeys", KlineDataMapKeys, "WsTopicListSpot", WsTopicListSpot, "WsTopicListLinear", WsTopicListLinear)
+
+			}
 
 		case <-ctx.Done():
 			// Завершаем работу функции по контексту - все defer отрабатают автоматически

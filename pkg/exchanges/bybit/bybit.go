@@ -757,7 +757,7 @@ func (b *BybitClient) WsPingTimer(ctx context.Context, conn *websocket.Conn, sto
 				return // Выходим из горутины, сокет отключен
 			}
 
-			slog.Info("Ws на сервер отправлен запрос ping", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
+			slog.Debug("Ws на сервер отправлен запрос ping", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
 		case <-stopChan:
 
 			slog.Info("Ws ping воркер остановлен по сигналу", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
@@ -785,7 +785,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 		//если пришло сообщение pong (в ответ на наш ping)
 		if isPong == true {
 
-			slog.Info("Ws от сервера получен ответ pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
+			slog.Debug("Ws от сервера получен ответ pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
 
 			//передвинем дедлайн
 			err := conn.SetReadDeadline(time.Now().Add(exchange.FetchIntervals.WsDeadLineDelta))

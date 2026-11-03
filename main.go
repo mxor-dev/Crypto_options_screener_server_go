@@ -229,7 +229,7 @@ func main() {
 				// workers.GetKlineDataInitial(exchangeVal, &allKlineIntervals, "linear")
 
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
-				go workers.GetKlineDataTimer(ctx, exchangeVal)
+				go workers.GetKlineDataTimer(ctx, exchangeVal, KlineDeleteDeltaTime)
 
 				//в зависимости от биржи для получнеия последней свечи могут использоваться один или два ws воркера
 				switch exchangeKey {
@@ -257,10 +257,13 @@ func main() {
 				// go workers.SaveSymbolDataToDbTimer(ctx, pool, exchangeVal)
 
 				//запуск воркера для очистки klineData
-				go workers.KlineDataDeleteTimer(ctx, AllExchanges)
+				go workers.KlineDataDeleteTimer(ctx, exchangeVal, 10*time.Second)
+
+				// запуск воркера для отображения основыных параметров сервера
+				go workers.GetExangeStateTimer(ctx, exchangeVal, 10*time.Second)
 
 				//запуск воркера для получения статистики сервера
-				go workers.GetMemStatsTimer(ctx, exchangeVal)
+				go workers.GetMemStatsTimer(ctx, exchangeVal, 60*time.Second)
 			}
 		}
 
@@ -396,58 +399,10 @@ func main() {
 
 			slog.Warn("Данные по запросу не найдены", "url", "/api/kline_data", "req", req)
 
-			// //создадим данные с таким ключом
-			// SymbolData.AllKlineData.Lock()
+			//запустим получение данных kline для текущего запроса
+			workers.GetKlineData(AllExchanges[req.ExchangeName], req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit, KlineDeleteDeltaTime)
 
-			// //для каждого интервала
-			// for i := range allKlineIntervals {
-			// 	//смформируем ключ
-			// 	key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, allKlineIntervals[i])
-			// 	//сделаем пустой объект
-			// 	SymbolData.AllKlineData.KlineDataMap[key] = &shared.KlineDataMu{}
-
-			// 	//заполним поля начальными значениями
-			// 	SymbolData.AllKlineData.KlineDataMap[key].KlineData = shared.KlineData{
-			// 		Contract: req.Contract,
-			// 		Category: req.Category,
-			// 		Interval: allKlineIntervals[i],
-
-			// 		Klines:     [][]string{},
-			// 		LastCandle: []string{},
-
-			// 		DeleteTime: time.Now().Add(KlineDeleteDeltaTime),
-			// 	}
-			// }
-			// SymbolData.AllKlineData.Unlock()
-
-			// //получим данные kline начальные для всех интервалов - делаем отдельно чтобы не зависали локи мьютексов
-			// workers.GetKlineDataInitial(AllExchanges[req.ExchangeName], allKlineIntervals, req.Symbol, req.Contract, req.Category, KlineLimit)
-
-			//создадим данные с таким ключом
-			SymbolData.AllKlineData.Lock()
-
-			//смформируем ключ
-			key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, req.Interval)
-			//сделаем пустой объект
-			SymbolData.AllKlineData.KlineDataMap[key] = &shared.KlineDataMu{}
-
-			//заполним поля начальными значениями
-			SymbolData.AllKlineData.KlineDataMap[key].KlineData = shared.KlineData{
-				Contract: req.Contract,
-				Category: req.Category,
-				Interval: req.Interval,
-
-				Klines:     [][]string{},
-				LastCandle: []string{},
-
-				DeleteTime: time.Now().Add(KlineDeleteDeltaTime),
-			}
-			SymbolData.AllKlineData.Unlock()
-
-			workers.GetKlineData(AllExchanges[req.ExchangeName], req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit)
-
-			//еще раз обратимя к данным они уже должны быть
-
+			//еще раз обратимя к данным они уже должны быть - предыдущая функция синхранная
 			SymbolData.AllKlineData.RLock()
 			KlineDataMu, ok := SymbolData.AllKlineData.KlineDataMap[key]
 			SymbolData.AllKlineData.RUnlock()
@@ -527,7 +482,7 @@ func main() {
 			return
 		}
 
-		slog.Debug("Получен запрос POST", "url", "/api/kline_data", "req", req)
+		slog.Debug("Получен запрос POST", "url", "/api/last_candle", "req", req)
 
 		//проверим есть ли такая биржа
 		_, ok := AllExchanges[req.ExchangeName]
@@ -541,7 +496,7 @@ func main() {
 
 		//в зависимости от имени биржи
 		switch req.ExchangeName {
-		case "bybit":
+		case "Bybit":
 
 			switch req.Category {
 			case "spot":
@@ -553,10 +508,10 @@ func main() {
 
 				// если категория spot не содержит запись о подписке
 				if !slices.Contains(WsTopicListSpot, fmt.Sprintf("publicTrade.%s", req.Contract)) {
-					slog.Error("Топик не открыт", "url", "/api/kline_data", "req", req)
+					slog.Warn("Топик не открыт", "url", "/api/kline_data", "req", req)
 
 					if AllExchanges[req.ExchangeName].WsCmdChanSpot == nil {
-						slog.Error("Канал для управления ws не определен", "url", "/api/kline_data", "req", req)
+						slog.Warn("Канал для управления ws не определен", "url", "/api/kline_data", "req", req)
 						// если категория не определена
 						c.JSON(http.StatusBadRequest, gin.H{"error": "Канал для управления ws не определен"})
 						return
@@ -568,8 +523,39 @@ func main() {
 						Topic:  fmt.Sprintf("publicTrade.%s", req.Contract),
 					}
 
-					// Отправляем сообщение
+					// Отправляем сообщение в канал управления ws
 					AllExchanges[req.ExchangeName].WsCmdChanSpot <- msg
+
+					key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, req.Interval)
+					AllExchanges[req.ExchangeName].AllSymbols[req.Symbol].AllKlineData.RLock()
+					KlineDataMu, ok := AllExchanges[req.ExchangeName].AllSymbols[req.Symbol].AllKlineData.KlineDataMap[key]
+					AllExchanges[req.ExchangeName].AllSymbols[req.Symbol].AllKlineData.RUnlock()
+
+					//если записи данных kline для текущего ключа не существует
+					if !ok {
+						//запустим получение данных kline для текущего запроса
+						workers.GetKlineData(AllExchanges[req.ExchangeName], req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit, KlineDeleteDeltaTime)
+
+						//дадим пустой ответ
+						//дадим ответ
+						c.JSON(http.StatusOK, gin.H{
+							"status": "success",
+							"data":   "",
+						})
+
+						return
+					}
+
+					//получим данные последней свечки
+					KlineDataMu.Lock()
+					last_candle := KlineDataMu.KlineData.LastCandle
+					KlineDataMu.Unlock()
+
+					//дадим ответ
+					c.JSON(http.StatusOK, gin.H{
+						"status": "success",
+						"data":   last_candle,
+					})
 
 					return
 				}
