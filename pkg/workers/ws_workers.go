@@ -172,7 +172,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint
 				if cmdMsg.Action == "subscribe" {
 
 					msg := WsMessageBibyt{
-						ReqID: exchange.GenID.Next(),
+						ReqID: cmdMsg.ID,
 						Op:    cmdMsg.Action,
 						Args:  []string{cmdMsg.Topic},
 					}

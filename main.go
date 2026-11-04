@@ -349,7 +349,7 @@ func main() {
 		slog.Debug("Получен запрос POST", "url", "/api/kline_data", "req", req)
 
 		//проверим есть ли такая биржа
-		_, ok := AllExchanges[req.ExchangeName]
+		exchange, ok := AllExchanges[req.ExchangeName]
 		if !ok {
 			slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/kline_data", "req", req)
 
@@ -358,7 +358,7 @@ func main() {
 			return
 		}
 		//проверим есть ли такая биржа
-		SymbolData, ok := AllExchanges[req.ExchangeName].AllSymbols[req.Symbol]
+		SymbolData, ok := exchange.AllSymbols[req.Symbol]
 		if !ok {
 			slog.Error("Ошибка в запросе: такого символа не существует", "url", "/api/kline_data", "req", req)
 
@@ -378,8 +378,18 @@ func main() {
 			LastCandle:   []string{},
 		}
 
+		//конвертируем интервал во внутренний
+		intervalConverted, err := exchange.Client.ConvertInterval(req.Interval)
+		if err != nil {
+			slog.Error("Ошибка не удалось конвертировать интервал", "url", "/api/kline_data", "req", req)
+
+			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка сервера"})
+			return
+		}
+
 		//составим ключ
-		key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, req.Interval)
+		key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, intervalConverted)
 		SymbolData.AllKlineData.RLock()
 		KlineDataMu, ok := SymbolData.AllKlineData.KlineDataMap[key]
 		SymbolData.AllKlineData.RUnlock()
@@ -390,7 +400,7 @@ func main() {
 			slog.Warn("Данные по запросу не найдены", "url", "/api/kline_data", "req", req)
 
 			//запустим получение данных kline для текущего запроса
-			workers.GetKlineData(AllExchanges[req.ExchangeName], req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit, KlineDeleteDeltaTime)
+			workers.GetKlineData(exchange, req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit, KlineDeleteDeltaTime)
 
 			//еще раз обратимя к данным они уже должны быть - предыдущая функция синхранная
 			SymbolData.AllKlineData.RLock()
@@ -465,7 +475,7 @@ func main() {
 		// парсим данные
 		if err := c.ShouldBindJSON(&req); err != nil {
 
-			slog.Error("Ошибка в запросе: неверный формат данных", "url", "/api/kline_data", "req", req)
+			slog.Error("Ошибка в запросе: неверный формат данных", "url", "/api/last_candle", "req", req)
 
 			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: неверный формат данных"})
@@ -477,7 +487,7 @@ func main() {
 		//проверим есть ли такая биржа
 		exchange, ok := AllExchanges[req.ExchangeName]
 		if !ok {
-			slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/kline_data", "req", req)
+			slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/last_candle", "req", req)
 
 			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой биржи не существует"})
@@ -489,9 +499,9 @@ func main() {
 		case "Bybit":
 
 			//конвертируем интервал во внутренний
-			intervalConverted, err := AllExchanges["Bybit"].Client.ConvertInterval(req.Interval)
+			intervalConverted, err := exchange.Client.ConvertInterval(req.Interval)
 			if err != nil {
-				slog.Error("Ошибка не удалось конвертировать интервал", "url", "/api/kline_data", "req", req)
+				slog.Error("Ошибка не удалось конвертировать интервал", "url", "/api/last_candle", "req", req)
 
 				// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка сервера"})
@@ -504,7 +514,7 @@ func main() {
 				//получим ws спота
 				ws, ok = exchange.Ws[exchange.Client.GetBaseEndpointSpot()]
 				if !ok {
-					slog.Error("Не удалось найти ws spot", "url", "/api/kline_data", "req", req)
+					slog.Error("Не удалось найти ws spot", "url", "/api/last_candle", "req", req)
 
 					//если не удаеться найти
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка сервера"})
@@ -515,7 +525,7 @@ func main() {
 				//получим ws спота
 				ws, ok = exchange.Ws[exchange.Client.GetBaseEndpointLinear()]
 				if !ok {
-					slog.Error("Не удалось найти ws linear", "url", "/api/kline_data", "req", req)
+					slog.Error("Не удалось найти ws linear", "url", "/api/last_candle", "req", req)
 
 					//если не удаеться найти
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка сервера"})
@@ -523,7 +533,7 @@ func main() {
 				}
 
 			default:
-				slog.Error("Ошибка в запросе: такой категории не существует", "url", "/api/kline_data", "req", req)
+				slog.Error("Ошибка в запросе: такой категории не существует", "url", "/api/last_candle", "req", req)
 				// если категория не определена
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой категории не существует"})
 				return
@@ -538,12 +548,12 @@ func main() {
 			//сформируем топик
 			klineTopik := fmt.Sprintf("kline.%s.%s", intervalConverted, req.Contract)
 
-			// если категория spot не содержит запись о подписке
+			// если категория не содержит запись о подписке
 			if !slices.Contains(topicListCopy, klineTopik) {
-				slog.Warn("Топик не открыт", "url", "/api/kline_data", "req", req)
+				slog.Warn("Топик не открыт", "url", "/api/last_candle", "req", req)
 
 				if ws.CmdChan == nil {
-					slog.Warn("Канал для управления ws не определен", "url", "/api/kline_data", "req", req)
+					slog.Warn("Канал для управления ws не определен", "url", "/api/last_candle", "req", req)
 					// если категория не определена
 					c.JSON(http.StatusBadRequest, gin.H{"error": "Канал для управления ws не определен"})
 					return
@@ -560,40 +570,60 @@ func main() {
 				// Отправляем сообщение в канал управления ws
 				ws.CmdChan <- cmdMsg
 
-				key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, req.Interval)
-				exchange.AllSymbols[req.Symbol].AllKlineData.RLock()
-				KlineDataMu, ok := exchange.AllSymbols[req.Symbol].AllKlineData.KlineDataMap[key]
-				exchange.AllSymbols[req.Symbol].AllKlineData.RUnlock()
+				// key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, intervalConverted)
+				// exchange.AllSymbols[req.Symbol].AllKlineData.RLock()
+				// KlineDataMu, ok := exchange.AllSymbols[req.Symbol].AllKlineData.KlineDataMap[key]
+				// exchange.AllSymbols[req.Symbol].AllKlineData.RUnlock()
 
-				//если записи данных kline для текущего ключа не существует
-				if !ok {
-					//запустим получение данных kline для текущего запроса
-					workers.GetKlineData(exchange, req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit, KlineDeleteDeltaTime)
+				// //если записи данных kline для текущего ключа не существует
+				// if !ok {
+				// 	//запустим получение данных kline для текущего запроса
+				// 	workers.GetKlineData(exchange, req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit, KlineDeleteDeltaTime)
 
-					//дадим пустой ответ
-					//дадим ответ
-					c.JSON(http.StatusOK, gin.H{
-						"status": "success",
-						"data":   "",
-					})
+				// 	//дадим пустой ответ
+				// 	c.JSON(http.StatusOK, gin.H{
+				// 		"status": "success",
+				// 		"data":   "",
+				// 	})
 
-					return
-				}
+				// 	return
+				// }
 
-				//получим данные последней свечки
-				KlineDataMu.Lock()
-				last_candle := KlineDataMu.KlineData.LastCandle
-				KlineDataMu.Unlock()
+			}
 
-				//дадим ответ
+			key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, intervalConverted)
+			exchange.AllSymbols[req.Symbol].AllKlineData.RLock()
+			KlineDataMu, ok := exchange.AllSymbols[req.Symbol].AllKlineData.KlineDataMap[key]
+			exchange.AllSymbols[req.Symbol].AllKlineData.RUnlock()
+
+			//если записи данных kline для текущего ключа не существует
+			if !ok {
+				//запустим получение данных kline для текущего запроса
+				workers.GetKlineData(exchange, req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit, KlineDeleteDeltaTime)
+
+				//дадим пустой ответ
 				c.JSON(http.StatusOK, gin.H{
 					"status": "success",
-					"data":   last_candle,
+					"data":   "",
 				})
 
 				return
 			}
 
+			//получим данные последней свечки
+			KlineDataMu.Lock()
+			lastCandle := KlineDataMu.KlineData.LastCandle
+			KlineDataMu.Unlock()
+
+			slog.Warn("Текущая последняя свеча", "url", "/api/last_candle", "req", req, "lastCandle", lastCandle)
+
+			//дадим ответ
+			c.JSON(http.StatusOK, gin.H{
+				"status": "success",
+				"data":   lastCandle,
+			})
+
+			return
 		}
 
 	})

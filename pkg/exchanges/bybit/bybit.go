@@ -879,6 +879,9 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 
 			//если подписка успешно оформлена
 			if resp.Success {
+
+				slog.Warn("Ws получено сообщение об успешной подписке", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
+
 				//возьмем вебсокет
 				ws := exchange.Ws[baseEndPoint]
 				ws.Lock()
@@ -899,12 +902,69 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 
 		}
 
-		switch expression {
-		case condition:
-			***
+		// {\"type\":\"snapshot\",\"topic\":\"kline.15.BTCUSDT\",\"data\":[{\"start\":1793748600000,\"end\":1793749499999,\"interval\":\"15\",\"open\":\"77919\",\"close\":\"77804.3\",\"high\":\"77993.1\",\"low\":\"77804.3\",\"volume\":\"91.622619\",\"turnover\":\"7137154.9407247\",\"confirm\":false,\"timestamp\":1793749427563}],\"ts\":1793749427563}"
+
+		//разделим топик
+		topicSlice := strings.Split(resp.Topic, ".")
+		//если длин больше 1 в топике что то лежит, потому как Slice от "" дает длину 1
+		if len(topicSlice) > 1 {
+
+			//если нулевой элемент kline
+			if topicSlice[0] == "kline" {
+
+				//распарсим data
+				var klines []WsBybitKlineItem
+				if err := json.Unmarshal(resp.Data, &klines); err != nil {
+					slog.Error("Ошибка парсинга последней свечи Kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "err", err)
+					return
+				}
+
+				//получим контракт
+				contract := topicSlice[2]
+
+				//получим категорию
+				baseEndPointSlice := strings.Split(baseEndPoint, "/")
+				category := baseEndPointSlice[len(baseEndPointSlice)-1]
+
+				//получим интервал
+				interval := topicSlice[1]
+
+				//символ - удалим "USDT" от контракта
+				symbol := strings.TrimSuffix(contract, "USDT")
+
+				//сформируем ключ для поиска записи kline
+				key := fmt.Sprintf("%s:%s:%s", contract, category, interval)
+
+				//Блокируем общее хранилище на чтение
+				exchange.AllSymbols[symbol].AllKlineData.RLock()
+
+				// разблокировать ПРИ ЛЮБОМ ВЫХОДЕ из функции
+				defer exchange.AllSymbols[symbol].AllKlineData.RUnlock()
+
+				//ищем карту
+				klineDataMu, ok := exchange.AllSymbols[symbol].AllKlineData.KlineDataMap[key]
+				if !ok {
+					slog.Error("Ошибка поиска записи kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "symbol", symbol, "key", key)
+					return // Теперь тут RUnlock() вызовется автоматически благодаря defer! Никакого дедлока!
+				}
+
+				//Блокируем конкретную свечу на запись
+				klineDataMu.Lock()
+				// Изменяем последнюю свечку TOHLC
+				klineDataMu.KlineData.LastCandle = []string{
+					strconv.FormatInt(klines[0].Start, 10),
+					klines[0].Open,
+					klines[0].High,
+					klines[0].Low,
+					klines[0].Close,
+				}
+				klineDataMu.Unlock()
+
+				// slog.Debug("Последняя свеча kline обновлена", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "klines", klines)
+				return
+			}
 		}
 
-		{\"type\":\"snapshot\",\"topic\":\"kline.15.BTCUSDT\",\"data\":[{\"start\":1793748600000,\"end\":1793749499999,\"interval\":\"15\",\"open\":\"77919\",\"close\":\"77804.3\",\"high\":\"77993.1\",\"low\":\"77804.3\",\"volume\":\"91.622619\",\"turnover\":\"7137154.9407247\",\"confirm\":false,\"timestamp\":1793749427563}],\"ts\":1793749427563}"
 		//если это какоето другое сообщение
 		// if isPong == false {
 		// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))

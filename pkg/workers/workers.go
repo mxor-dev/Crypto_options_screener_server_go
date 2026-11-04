@@ -96,8 +96,15 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 		slog.Warn("Длина данных len(klineData.Klines) == 0", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval)
 		return
 	}
+	//конвертируем интервал во внутренний
+	intervalConverted, err := exchange.Client.ConvertInterval(interval)
+	if err != nil {
+		slog.Error("Ошибка не удалось конвертировать интервал", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval, "err", err)
+		return
+	}
+
 	//получим ключ
-	key := fmt.Sprintf("%s:%s:%s", contract, category, interval)
+	key := fmt.Sprintf("%s:%s:%s", contract, category, intervalConverted)
 	exchange.AllSymbols[symbol].AllKlineData.RLock()
 	KlineData, ok := exchange.AllSymbols[symbol].AllKlineData.KlineDataMap[key]
 	exchange.AllSymbols[symbol].AllKlineData.RUnlock()
