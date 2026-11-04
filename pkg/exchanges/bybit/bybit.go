@@ -15,7 +15,6 @@ import (
 
 	"crypto_options_screener/pkg/convert"
 	"crypto_options_screener/pkg/shared"
-	"crypto_options_screener/pkg/workers"
 
 	"github.com/gorilla/websocket"
 )
@@ -976,43 +975,18 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 				return // Теперь тут RUnlock() вызовется автоматически благодаря defer! Никакого дедлока!
 			}
 
-			//время новой свечи
-			newCandleTime := strconv.FormatInt(klines[0].Start, 10)
-
-			var symbol string
-			var contract string
-			var category string
-			var interval string
-			var isKlineNeedsUpdate bool
-
 			//Блокируем конкретную свечу на запись
 			klineDataMu.Lock()
-
-			//если время новй свечи больше записанной - нужно обновлять klines полностью
-			if newCandleTime > klineDataMu.KlineData.LastCandle[0] {
-				symbol = klineDataMu.KlineData.Symbol
-				contract = klineDataMu.KlineData.Contract
-				category = klineDataMu.KlineData.Category
-				interval = klineDataMu.KlineData.Interval
-				isKlineNeedsUpdate = true
-			} else {
-				// Изменяем последнюю свечку TOHLC
-				klineDataMu.KlineData.LastCandle = []string{
-					strconv.FormatInt(klines[0].Start, 10),
-					klines[0].Open,
-					klines[0].High,
-					klines[0].Low,
-					klines[0].Close,
-				}
+			// Изменяем последнюю свечку TOHLC
+			klineDataMu.KlineData.LastCandle = []string{
+				strconv.FormatInt(klines[0].Start, 10),
+				klines[0].Open,
+				klines[0].High,
+				klines[0].Low,
+				klines[0].Close,
 			}
 			klineDataMu.Unlock()
 
-			//если выставлен флаг о необходимости обновить kline
-			if isKlineNeedsUpdate {
-				workers.GetKlineData(exchange, symbol, contract, category, interval)
-			}
-
-			// slog.Debug("Последняя свеча kline обновлена", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "klines", klines)
 			return
 		}
 	}

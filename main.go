@@ -105,7 +105,7 @@ func main() {
 	//------ ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
 
 	//настройки для всех бирж в виде хеш-таблицы
-	AllExchanges := map[string]*shared.Exchange{
+	allExchanges := map[string]*shared.Exchange{
 		"Bybit": {
 			IsActive:     true,
 			ExchangeName: "Bybit",
@@ -163,80 +163,80 @@ func main() {
 	// }
 
 	// для каждой биржи - ЗАПОЛНИМ НАЧАЛЬНЫЕ ДАННЫЕ СТРУКТУР
-	for exchangeName := range AllExchanges {
+	for exchangeName := range allExchanges {
 
 		// Перебираем символы внутри конкретной биржи по ключу (symbolName)
-		for symbolName := range AllExchanges[exchangeName].AllSymbols {
+		for symbolName := range allExchanges[exchangeName].AllSymbols {
 
 			// Получаем ПРЯМОЙ указатель на объект в мапе, чтобы менять оригинал
-			symbolData := AllExchanges[exchangeName].AllSymbols[symbolName]
+			symbolData := allExchanges[exchangeName].AllSymbols[symbolName]
 
 			// Инициализируем пустой слайс для опционов
 			symbolData.OptionsData = []shared.OptionsData{}
 		}
 
 		// Инициализируем мапу клайнов (Мьютексы на старте лочить НЕ НУЖНО)
-		AllExchanges[exchangeName].AllKlineData = shared.KlineDataMapMu{
+		allExchanges[exchangeName].AllKlineData = shared.KlineDataMapMu{
 			KlineDataMap: make(map[string]*shared.KlineDataMu),
 		}
 
-		AllExchanges[exchangeName].Ws = map[string]*shared.WsData{}
+		allExchanges[exchangeName].Ws = map[string]*shared.WsData{}
 
 		//счетчик ID
-		AllExchanges[exchangeName].GenID = &shared.GenIDMu{}
+		allExchanges[exchangeName].GenID = &shared.GenIDMu{}
 
 	}
 
 	//****** ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ *********************************************************************
 
 	//для каждой биржи
-	for exchangeKey, exchangeVal := range AllExchanges {
+	for exKey := range allExchanges {
 
-		slog.Info("Состояние биржи", "exchangeName", exchangeKey, "IsActive", exchangeVal.IsActive)
+		slog.Info("Состояние биржи", "exchangeName", allExchanges[exKey].ExchangeName, "IsActive", allExchanges[exKey].IsActive)
 
 		//если биржа активна
-		if exchangeVal.IsActive {
+		if allExchanges[exKey].IsActive {
 
 			//выберем имя биржи
-			switch exchangeKey {
+			switch exKey {
 			case "Bybit":
 				//создадим клиента
-				exchangeVal.Client = bybit.New("public_data", "public_data")
+				allExchanges[exKey].Client = bybit.New("public_data", "public_data")
 
-				slog.Info("Создан клиент для биржи", "exchangeName", exchangeKey)
+				slog.Info("Создан клиент для биржи", "exchangeName", exKey)
 			case "Mexc":
-				slog.Info("Создание клиента для биржи будет реализовано позднее", "exchangeName", exchangeKey)
+				slog.Info("Создание клиента для биржи будет реализовано позднее", "exchangeName", exKey)
 			default:
-				slog.Warn("Неизвестная биржа", "exchangeName", exchangeKey)
+				slog.Warn("Неизвестная биржа", "exchangeName", exKey)
 			}
 
 			//если клинет для биржи создан
-			if exchangeVal.Client != nil {
+			if allExchanges[exKey].Client != nil {
 				//запускаем воркеров
 
 				//получим информацию для всех монет на бирже и сохраним в бд
-				workers.GetAllSymbolsInfo(pool, exchangeVal)
+				workers.GetAllSymbolsInfo(pool, allExchanges[exKey])
 
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
-				// go workers.GetKlineDataTimer(ctx, exchangeVal, KlineDeleteDeltaTime)
+				go workers.GetKlineDataTimer(ctx, allExchanges[exKey])
 
 				//в зависимости от биржи для получнеия последней свечи могут использоваться один или два ws воркера
-				switch exchangeKey {
+				switch exKey {
 				case "Bybit":
 					//запускаем ws воркера для получения данных по spot
-					err = workers.StartWebSocket(ctx, exchangeVal, "spot", exchangeVal.Client.GetBaseEndpointSpot())
+					err = workers.StartWebSocket(ctx, allExchanges[exKey], "spot", allExchanges[exKey].Client.GetBaseEndpointSpot())
 					if err != nil {
-						slog.Error("Ошибка при старте ws worker", "exchangeName", exchangeKey, "baseEndPoint", exchangeVal.Client.GetBaseEndpointSpot())
+						slog.Error("Ошибка при старте ws worker", "exchangeName", allExchanges[exKey], "baseEndPoint", allExchanges[exKey].Client.GetBaseEndpointSpot())
 					}
 
 					//запускаем ws воркера для получения данных по linear
-					err = workers.StartWebSocket(ctx, exchangeVal, "linear", exchangeVal.Client.GetBaseEndpointLinear())
+					err = workers.StartWebSocket(ctx, allExchanges[exKey], "linear", allExchanges[exKey].Client.GetBaseEndpointLinear())
 					if err != nil {
-						slog.Error("Ошибка при старте ws worker", "exchangeName", exchangeKey, "baseEndPoint", exchangeVal.Client.GetBaseEndpointLinear())
+						slog.Error("Ошибка при старте ws worker", "exchangeName", allExchanges[exKey], "baseEndPoint", allExchanges[exKey].Client.GetBaseEndpointLinear())
 					}
 
 				case "Mexc":
-					slog.Info("Запуск ws worker для биржи будет реализовано позднее", "exchangeName", exchangeKey)
+					slog.Info("Запуск ws worker для биржи будет реализовано позднее", "exchangeName", exKey)
 				}
 
 				//запускаем воркера для получения данных по опционам по таймеру
@@ -246,13 +246,13 @@ func main() {
 				// go workers.SaveSymbolDataToDbTimer(ctx, pool, exchangeVal)
 
 				//запуск воркера для очистки klineData
-				go workers.ExpiredDataDeleteTimer(ctx, exchangeVal, 10*time.Second)
+				go workers.ExpiredDataDeleteTimer(ctx, allExchanges[exKey], 10*time.Second)
 
 				// запуск воркера для отображения основыных параметров сервера
-				go workers.GetExangeStateTimer(ctx, exchangeVal, 10*time.Second)
+				go workers.GetExangeStateTimer(ctx, allExchanges[exKey], 10*time.Second)
 
 				//запуск воркера для получения статистики сервера
-				go workers.GetMemStatsTimer(ctx, exchangeVal, 60*time.Second)
+				go workers.GetMemStatsTimer(ctx, allExchanges[exKey], 60*time.Second)
 			}
 		}
 
@@ -289,15 +289,15 @@ func main() {
 		//инициализируем ответ в виде хеш таблицы
 		exchangesData := make(map[string]LocalExchangeInfo)
 
-		for exchangeKey := range AllExchanges {
+		for exchangeKey := range allExchanges {
 
 			//локальные данные по символу
 			localAllSymbolsInfo := make(map[string]shared.SymbolInfo)
 
 			//для каждого символа
-			for symbolKey := range AllExchanges[exchangeKey].AllSymbols {
+			for symbolKey := range allExchanges[exchangeKey].AllSymbols {
 				//запишем данные по символу в хеш таблицу
-				localAllSymbolsInfo[symbolKey] = AllExchanges[exchangeKey].AllSymbols[symbolKey].Info.GetInfo()
+				localAllSymbolsInfo[symbolKey] = allExchanges[exchangeKey].AllSymbols[symbolKey].Info.GetInfo()
 			}
 
 			//создадим экземпляр
@@ -348,7 +348,7 @@ func main() {
 		slog.Debug("Получен запрос POST", "url", "/api/kline_data", "req", req)
 
 		//проверим есть ли такая биржа
-		exchange, ok := AllExchanges[req.ExchangeName]
+		exchange, ok := allExchanges[req.ExchangeName]
 		if !ok {
 			slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/kline_data", "req", req)
 
@@ -481,7 +481,7 @@ func main() {
 		slog.Debug("Получен запрос POST", "url", "/api/last_candle", "req", req)
 
 		//проверим есть ли такая биржа
-		exchange, ok := AllExchanges[req.ExchangeName]
+		exchange, ok := allExchanges[req.ExchangeName]
 		if !ok {
 			slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/last_candle", "req", req)
 

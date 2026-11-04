@@ -164,117 +164,113 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 //------- REST ВОРКЕРЫ ------
 
 // получает данные с определенным интервалом и записывает их в бд
-// func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange, KlineDeleteDeltaTime time.Duration) {
+func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
 
-// 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
+	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
-// 	//создадим тикер который каждые 1 секунду будет срабатывать
-// 	ticker := time.NewTicker(1 * time.Second)
-// 	defer func() {
-// 		ticker.Stop()
-// 		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
-// 	}()
+	//создадим тикер который каждые 1 секунду будет срабатывать
+	ticker := time.NewTicker(1 * time.Second)
+	defer func() {
+		ticker.Stop()
+		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
+	}()
 
-// 	//переменная для остановке
+	//переменная для остановке
 
-// 	for {
-// 		select {
-// 		//если тикер дал тик
-// 		case <-ticker.C:
+	for {
+		select {
+		//если тикер дал тик
+		case <-ticker.C:
 
-// 			// fmt.Print("тик\n")
+			// fmt.Print("тик\n")
 
-// 			//получим текущее время
-// 			now := time.Now().UTC()
+			//получим текущее время
+			now := time.Now().UTC()
 
-// 			//отбросим все до секунды
-// 			now = now.Truncate(time.Second)
+			//отбросим все до секунды
+			now = now.Truncate(time.Second)
 
-// 			//получим секунды
-// 			seconds := now.Second()
+			//получим секунды
+			seconds := now.Second()
 
-// 			//получим минуты
-// 			minutes := now.Minute()
+			//получим минуты
+			minutes := now.Minute()
 
-// 			// на каждой 15 минуте и 10 секунде
-// 			if (minutes%15 == 0) && seconds == 10 {
+			// на каждой 15 минуте и 10 секунде
+			if (minutes%15 == 0) && seconds == 10 {
 
-// 				//для каждого символа для текущей биржи
-// 				for i := range exchange.AllSymbols {
+				//для каждого символа для текущей биржи
+				for i := range exchange.AllSymbols {
 
-// 					//потокобезопасно получим мап с данными kline
-// 					exchange.AllKlineData.Lock()
-// 					KlineDataMap := exchange.AllKlineData.KlineDataMap
-// 					exchange.AllKlineData.Unlock()
+					//потокобезопасно получим мап с данными kline
+					exchange.AllKlineData.Lock()
+					KlineDataMap := exchange.AllKlineData.KlineDataMap
+					exchange.AllKlineData.Unlock()
 
-// 					//для каждой записи kline
-// 					for j := range KlineDataMap {
+					//для каждой записи kline
+					for j := range KlineDataMap {
 
-// 						//фильтр по интервалу
-// 						if KlineDataMap[j].KlineData.Interval == "15m" {
+						//фильтр по интервалу
+						if KlineDataMap[j].KlineData.Interval == "15m" {
 
-// 							//получим и сохраним в общий объект
-// 							GetKlineData(
-// 								exchange,
-// 								exchange.AllSymbols[i].Symbol,
-// 								KlineDataMap[j].KlineData.Contract,
-// 								KlineDataMap[j].KlineData.Category,
-// 								KlineDataMap[j].KlineData.Interval,
-// 								"1000",
-// 								KlineDeleteDeltaTime,
-// 							)
-// 							//сделаем паузу между запросами
-// 							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-// 						}
-// 					}
-// 				}
-// 			}
-// 			//на каждой часовой минуте и 10 секунде
-// 			if minutes == 0 && seconds == 10 {
+							//получим и сохраним в общий объект
+							GetKlineData(
+								exchange,
+								exchange.AllSymbols[i].Symbol,
+								KlineDataMap[j].KlineData.Contract,
+								KlineDataMap[j].KlineData.Category,
+								KlineDataMap[j].KlineData.Interval,
+							)
+							//сделаем паузу между запросами
+							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+						}
+					}
+				}
+			}
+			//на каждой часовой минуте и 10 секунде
+			if minutes == 0 && seconds == 10 {
 
-// 				//для каждого символа для текущей биржи
-// 				for i := range exchange.AllSymbols {
+				//для каждого символа для текущей биржи
+				for i := range exchange.AllSymbols {
 
-// 					//потокобезопасно получим мап с данными kline
-// 					exchange.AllKlineData.Lock()
-// 					KlineDataMap := exchange.AllKlineData.KlineDataMap
-// 					exchange.AllKlineData.Unlock()
+					//потокобезопасно получим мап с данными kline
+					exchange.AllKlineData.Lock()
+					KlineDataMap := exchange.AllKlineData.KlineDataMap
+					exchange.AllKlineData.Unlock()
 
-// 					//для каждого интервала - нужно чтобы интервалы шли последовательно
-// 					for _, interval := range []string{"1h", "1D", "1W"} {
+					//для каждого интервала - нужно чтобы интервалы шли последовательно
+					for _, interval := range []string{"1h", "1D", "1W"} {
 
-// 						//для каждой записи kline
-// 						for j := range KlineDataMap {
+						//для каждой записи kline
+						for j := range KlineDataMap {
 
-// 							//фильтр по интервалу
-// 							if KlineDataMap[j].KlineData.Interval == interval {
+							//фильтр по интервалу
+							if KlineDataMap[j].KlineData.Interval == interval {
 
-// 								//получим и сохраним в общий объект
-// 								GetKlineData(
-// 									exchange,
-// 									exchange.AllSymbols[i].Symbol,
-// 									KlineDataMap[j].KlineData.Contract,
-// 									KlineDataMap[j].KlineData.Category,
-// 									KlineDataMap[j].KlineData.Interval,
-// 									"1000",
-// 									KlineDeleteDeltaTime,
-// 								)
-// 								//сделаем паузу между запросами
-// 								time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-// 							}
-// 						}
-// 					}
-// 				}
-// 			}
+								//получим и сохраним в общий объект
+								GetKlineData(
+									exchange,
+									exchange.AllSymbols[i].Symbol,
+									KlineDataMap[j].KlineData.Contract,
+									KlineDataMap[j].KlineData.Category,
+									KlineDataMap[j].KlineData.Interval,
+								)
+								//сделаем паузу между запросами
+								time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+							}
+						}
+					}
+				}
+			}
 
-// 		//если работа программы остановлены
-// 		case <-ctx.Done():
-// 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
-// 			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
-// 			return
-// 		}
-// 	}
-// }
+		//если работа программы остановлены
+		case <-ctx.Done():
+			// Завершаем работу функции по контексту - все defer отрабатают автоматически
+			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
+			return
+		}
+	}
+}
 
 // воркер для получения данных по опционам по таймеру
 func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
