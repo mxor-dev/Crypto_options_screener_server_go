@@ -12,7 +12,7 @@ import (
 )
 
 // запуск универсального вебсокета
-func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint string) error {
+func StartWebSocket(ctx context.Context, exchange *shared.Exchange, wsKey string, baseEndPoint string) error {
 	//  канал управления подписками (буферизованный, чтобы не блокировать вызывающий код)
 	cmdChan := make(chan shared.CmdChanMsg, 100)
 
@@ -25,7 +25,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint
 	slog.Info("Ws установлено соединение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
 
 	//созадим запись для для вебсокета внтури биржи
-	exchange.Ws[baseEndPoint] = &shared.WsData{
+	exchange.Ws[wsKey] = &shared.WsData{
 		CmdChan:   cmdChan,
 		TopicList: []string{},
 		CmdBuffer: []shared.CmdChanMsg{},
@@ -35,7 +35,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint
 	pingStopChan := make(chan struct{})
 
 	//запустим воркер для пинга к серверу по интервалу
-	go exchange.Client.WsPingTimer(ctx, conn, pingStopChan, exchange.ExchangeName, baseEndPoint)
+	go exchange.Client.WsPingTimer(ctx, exchange, pingStopChan, wsKey)
 
 	//горутина для отключения воркера по контексту
 	go func() {
@@ -101,7 +101,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint
 						pingStopChan = make(chan struct{})
 
 						//запустим воркер для пинга к серверу по интервалу на новом соединении и сновым каналом остановки
-						go exchange.Client.WsPingTimer(ctx, conn, pingStopChan, exchange.ExchangeName, baseEndPoint)
+						go exchange.Client.WsPingTimer(ctx, exchange, pingStopChan, wsKey)
 
 						//текущий вебсокет
 						ws := exchange.Ws[baseEndPoint]
@@ -145,7 +145,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint
 			// slog.Debug("Получено сообщение от сервера", "string(message)", string(message))
 
 			//любой ответ передаем обработчику сообщений конкретного клиента, он дальше разбераеться что пришло с учетом особенностей биржи
-			exchange.Client.WsDecodeMessage(exchange, baseEndPoint, conn, message)
+			exchange.Client.WsDecodeMessage(exchange, wsKey, conn, message)
 		}
 	}()
 
@@ -159,40 +159,58 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, baseEndPoint
 
 			slog.Warn("Ws получено управляющее сообщение", "ExchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "cmdMsg", cmdMsg)
 
+			//в зависимости от биржи заполним сообщение
 			switch exchange.ExchangeName {
 			case "Bybit":
 
-				type WsMessageBibyt struct {
-					ReqID string   `json:"req_id,omitempty"`
-					Op    string   `json:"op"`
-					Args  []string `json:"args"`
-				}
+				//в зависимости от действия в сообщении
+				switch cmdMsg.Action {
+				case "ping":
+					// Структура текстового запроса для Bybit / большинства бирж
+					type JsonPing struct {
+						Op string `json:"op"`
+					}
+					req := JsonPing{Op: "ping"}
 
-				//если поулчена команда подписаться
-				if cmdMsg.Action == "subscribe" {
+					// Взводим дедлайн (таймаут) на 5 секунд. Если за это время сервер не пришлет нам
+					// в обычном сообщении в ответ JSON {"op":"pong"}, сокет отключится и выдаст ошибку в чтении.
+					conn.SetReadDeadline(time.Now().Add(5 * time.Second)) //******* ЭТО ДЕЛАЕТЬСЯ НЕ ТУТ
 
-					msg := WsMessageBibyt{
+					// Отправляем в вебсокет
+					err := conn.WriteJSON(req)
+					if err != nil {
+						slog.Error("Ошибка отправки запроса в WS", "cmdMsg", cmdMsg, "req", req, "err", err)
+					}
+					slog.Info("Запрос отправлен в WS", "cmdMsg", cmdMsg, "req", req)
+
+				case "subscribe", "unsubscribe":
+
+					type WsMessageBibyt struct {
+						ReqID string   `json:"req_id,omitempty"`
+						Op    string   `json:"op"`
+						Args  []string `json:"args"`
+					}
+
+					//заполним сообщение
+					req := WsMessageBibyt{
 						ReqID: cmdMsg.ID,
 						Op:    cmdMsg.Action,
 						Args:  []string{cmdMsg.Topic},
 					}
 
 					//запишем изначальную команду в буфер отправленных сообщений
-					exchange.Ws[baseEndPoint].Lock()
-					exchange.Ws[baseEndPoint].CmdBuffer = append(exchange.Ws[baseEndPoint].CmdBuffer, cmdMsg)
-					exchange.Ws[baseEndPoint].Unlock()
+					exchange.Ws[wsKey].Lock()
+					exchange.Ws[wsKey].CmdBuffer = append(exchange.Ws[wsKey].CmdBuffer, cmdMsg)
+					exchange.Ws[wsKey].Unlock()
 
 					// Отправляем в вебсокет
-					err := conn.WriteJSON(msg)
+					err := conn.WriteJSON(req)
 					if err != nil {
-						slog.Error("Ошибка отправки запроса в WS", "cmdMsg", cmdMsg, "err", err)
-
+						slog.Error("Ошибка отправки запроса в WS", "cmdMsg", cmdMsg, "req", req, "err", err)
 					}
-					slog.Info("Запрос отправлен в WS", "op", cmdMsg, "cmdMsg", cmdMsg)
+					slog.Info("Запрос отправлен в WS", "cmdMsg", cmdMsg, "req", req)
 				}
-
 			}
-
 		}
 	}()
 

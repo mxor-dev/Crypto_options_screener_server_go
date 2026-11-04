@@ -15,6 +15,7 @@ import (
 
 	"crypto_options_screener/pkg/convert"
 	"crypto_options_screener/pkg/shared"
+	"crypto_options_screener/pkg/workers"
 
 	"github.com/gorilla/websocket"
 )
@@ -799,54 +800,47 @@ func (b *BybitClient) GetOptions(symbol string) ([]shared.OptionsData, error) {
 }
 
 // вспомогательный воркер для отправики сообщений ping
-func (b *BybitClient) WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct{}, exchangeName string, baseEndPoint string) {
+func (b *BybitClient) WsPingTimer(ctx context.Context, exchange *shared.Exchange, stopChan chan struct{}, wsKey string) {
 
-	slog.Info("Ws ping запуск воркера", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
+	slog.Info("Ws ping запуск воркера", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
 
 	// Создаем тикер с интервалом в 20 секунд
 	ticker := time.NewTicker(20 * time.Second)
 	defer func() {
 		ticker.Stop()
-		slog.Info("Ws ping таймер остановлен", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
+		slog.Info("Ws ping таймер остановлен", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
 	}()
-
-	// Структура текстового запроса для Bybit / большинства бирж
-	type JsonPing struct {
-		Op string `json:"op"`
-	}
-	pingReq := JsonPing{Op: "ping"}
 
 	for {
 		select {
 		case <-ticker.C:
-			// Взводим дедлайн (таймаут) на 5 секунд. Если за это время сервер не пришлет нам
-			// в обычном сообщении в ответ JSON {"op":"pong"}, сокет отключится и выдаст ошибку в чтении.
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 
-			// Отправляем текстовый JSON Ping вместо системного фрейма
-			if err := conn.WriteJSON(pingReq); err != nil {
-				slog.Error("Ws ошибка отправки JSON Ping", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint, "error", err)
-				conn.Close() // Принудительно закрываем сокет, чтобы разблокировать цикл чтения
-
-				slog.Info("Ws работа вспомогательной горутины ping-pong завершена по отключению вебсокета", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
-				return // Выходим из горутины, сокет отключен
+			// составим сообщение ping
+			cmdMsg := shared.CmdChanMsg{
+				ID:         "",
+				Action:     "ping",
+				Topic:      "",
+				DeleteTime: time.Now(),
 			}
 
-			slog.Debug("Ws на сервер отправлен запрос ping", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
+			// Отправляем сообщение в канал управления ws
+			exchange.Ws[wsKey].CmdChan <- cmdMsg
+
+			slog.Debug("Ws на сервер отправлен запрос ping", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
 		case <-stopChan:
 
-			slog.Info("Ws ping воркер остановлен по сигналу", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
+			slog.Info("Ws ping воркер остановлен по сигналу", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
 			return // Выходим по внешнемук сигналу
 
 		case <-ctx.Done():
-			slog.Info("Ws ping воркер остановлен по контксту", "exchangeName", exchangeName, "baseEndPoint", baseEndPoint)
+			slog.Info("Ws ping воркер остановлен по контксту", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
 			return // Выходим по контексту приложения
 		}
 	}
 }
 
 // обработка сообщение и передача данных в общее хранилище
-func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint string, conn *websocket.Conn, message []byte) {
+func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, conn *websocket.Conn, message []byte) {
 	// //еcли ответ - пустое ообщение - это переподключение
 	// if string(message) == "" {
 	// 	slog.Debug("Ws переподключен", "ExchangeName", exchange.ExchangeName)
@@ -855,7 +849,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 	//базовый ответ
 	var resp WsBybitBaseResponse
 	if err := json.Unmarshal(message, &resp); err != nil {
-		slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
+		slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "err", err)
 		return
 	}
 
@@ -864,12 +858,12 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 	case "ping":
 		// если это сообщение pong
 
-		slog.Debug("Ws от сервера получен ответ pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
+		slog.Debug("Ws от сервера получен ответ pong", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
 
 		//передвинем дедлайн
 		err := conn.SetReadDeadline(time.Now().Add(exchange.FetchIntervals.WsDeadLineDelta))
 		if err != nil {
-			slog.Error("Ws ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "error", err)
+			slog.Error("Ws ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "error", err)
 		}
 
 		return
@@ -881,26 +875,72 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 		//если подписка успешно оформлена
 		if resp.Success {
 
-			slog.Warn("Ws получено сообщение об успешной подписке", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
+			slog.Warn("Ws получено сообщение об успешной подписке", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
 
 			//возьмем вебсокет
-			ws := exchange.Ws[baseEndPoint]
+			ws := exchange.Ws[wsKey]
 			ws.Lock()
 
 			//найдем топик по id
 			var topic string
+			var idxToDelete int
+			isFound := false
 			for i := range ws.CmdBuffer {
 				if ws.CmdBuffer[i].ID == resp.ReqID {
 					topic = ws.CmdBuffer[i].Topic
+					idxToDelete = i
+					isFound = true
 				}
 			}
-			//добавим топик
-			ws.TopicList = append(ws.TopicList, topic)
+			if isFound {
+				//добавим топик в список топиков
+				ws.TopicList = append(ws.TopicList, topic)
+				//удалим команду из списка
+				ws.CmdBuffer = slices.Delete(ws.CmdBuffer, idxToDelete, idxToDelete+1)
+			}
+
 			ws.Unlock()
 
 			return
 		}
+	case "unsubscribe":
+		// {\"success\":true,\"ret_msg\":\"unsubscribe\",\"conn_id\":\"dbhf3h3sfisbbk4i4b3g-17shw\",\"req_id\":\"2\",\"op\":\"unsubscribe\"}
 
+		//если подписка успешно отменена
+		if resp.Success {
+
+			slog.Warn("Ws получено сообщение об успешной отмене подписке", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
+
+			//возьмем вебсокет
+			ws := exchange.Ws[wsKey]
+			ws.Lock()
+
+			//найдем топик по id
+			var topic string
+			var idxToDelete int
+			isFound := false
+			for i := range ws.CmdBuffer {
+				if ws.CmdBuffer[i].ID == resp.ReqID {
+					topic = ws.CmdBuffer[i].Topic
+					idxToDelete = i
+					isFound = true
+				}
+			}
+			if isFound {
+				// найдем индекс топика в списке топиков
+				if idx := slices.Index(ws.TopicList, topic); idx != -1 {
+					// Удаляем топик по найденному индексу
+					ws.TopicList = slices.Delete(ws.TopicList, idx, idx+1)
+				}
+
+				//удалим команду из списка команд
+				ws.CmdBuffer = slices.Delete(ws.CmdBuffer, idxToDelete, idxToDelete+1)
+			}
+
+			ws.Unlock()
+
+			return
+		}
 	}
 
 	// {\"type\":\"snapshot\",\"topic\":\"kline.15.BTCUSDT\",\"data\":[{\"start\":1793748600000,\"end\":1793749499999,\"interval\":\"15\",\"open\":\"77919\",\"close\":\"77804.3\",\"high\":\"77993.1\",\"low\":\"77804.3\",\"volume\":\"91.622619\",\"turnover\":\"7137154.9407247\",\"confirm\":false,\"timestamp\":1793749427563}],\"ts\":1793749427563}"
@@ -916,16 +956,12 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 			//распарсим data
 			var klines []WsBybitKlineItem
 			if err := json.Unmarshal(resp.Data, &klines); err != nil {
-				slog.Error("Ошибка парсинга последней свечи Kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "err", err)
+				slog.Error("Ошибка парсинга последней свечи Kline", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "err", err)
 				return
 			}
 
-			//получим категорию
-			baseEndPointSlice := strings.Split(baseEndPoint, "/")
-			category := baseEndPointSlice[len(baseEndPointSlice)-1]
-
 			//сформируем ключ для поиска записи kline
-			key := fmt.Sprintf("%s:%s", category, resp.Topic)
+			key := fmt.Sprintf("%s:%s", wsKey, resp.Topic)
 
 			//Блокируем общее хранилище на чтение
 			exchange.AllKlineData.RLock()
@@ -936,35 +972,59 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 			//ищем карту
 			klineDataMu, ok := exchange.AllKlineData.KlineDataMap[key]
 			if !ok {
-				slog.Error("Ошибка поиска записи kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "key", key)
+				slog.Error("Ошибка поиска записи kline", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key)
 				return // Теперь тут RUnlock() вызовется автоматически благодаря defer! Никакого дедлока!
 			}
 
+			//время новой свечи
+			newCandleTime := strconv.FormatInt(klines[0].Start, 10)
+
+			var symbol string
+			var contract string
+			var category string
+			var interval string
+			var isKlineNeedsUpdate bool
+
 			//Блокируем конкретную свечу на запись
 			klineDataMu.Lock()
-			// Изменяем последнюю свечку TOHLC
-			klineDataMu.KlineData.LastCandle = []string{
-				strconv.FormatInt(klines[0].Start, 10),
-				klines[0].Open,
-				klines[0].High,
-				klines[0].Low,
-				klines[0].Close,
+
+			//если время новй свечи больше записанной - нужно обновлять klines полностью
+			if newCandleTime > klineDataMu.KlineData.LastCandle[0] {
+				symbol = klineDataMu.KlineData.Symbol
+				contract = klineDataMu.KlineData.Contract
+				category = klineDataMu.KlineData.Category
+				interval = klineDataMu.KlineData.Interval
+				isKlineNeedsUpdate = true
+			} else {
+				// Изменяем последнюю свечку TOHLC
+				klineDataMu.KlineData.LastCandle = []string{
+					strconv.FormatInt(klines[0].Start, 10),
+					klines[0].Open,
+					klines[0].High,
+					klines[0].Low,
+					klines[0].Close,
+				}
 			}
 			klineDataMu.Unlock()
 
-			// slog.Debug("Последняя свеча kline обновлена", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "klines", klines)
+			//если выставлен флаг о необходимости обновить kline
+			if isKlineNeedsUpdate {
+				workers.GetKlineData(exchange, symbol, contract, category, interval)
+			}
+
+			// slog.Debug("Последняя свеча kline обновлена", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "klines", klines)
 			return
 		}
 	}
 
 	//если это какоето другое сообщение
 	// if isPong == false {
-	// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
+	// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "message", string(message))
 
 	// //ответ на операцию subscribe/unsubscribe и другие
 	// var opResp WsBybitOpResponseStatus
 	// if err := json.Unmarshal(message, &opResp); err != nil {
-	// 	slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
+	// 	slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "err", err)
 	// 	return
 	// }
 	// switch {
@@ -972,7 +1032,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 	// 	//если получены сделки
 	// 	var trades []WsBybitTradeItemShort
 	// 	if err := json.Unmarshal(opResp.Data, &trades); err != nil {
-	// 		slog.Error("Ошибка парсинга сделок", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
+	// 		slog.Error("Ошибка парсинга сделок", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", baseResp.Topic, "err", err)
 
 	// 	}
 	// 	// Логика обработки сде
@@ -981,7 +1041,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 	//ответ с данными
 	// var baseResp WsBybitDataResponse
 	// if err := json.Unmarshal(message, &baseResp); err != nil {
-	// 	slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
+	// 	slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "err", err)
 	// 	return
 	// }
 
@@ -992,48 +1052,101 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 	// 	//если получены сделки
 	// 	var trades []WsBybitTradeItemShort
 	// 	if err := json.Unmarshal(baseResp.Data, &trades); err != nil {
-	// 		slog.Error("Ошибка парсинга сделок", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
+	// 		slog.Error("Ошибка парсинга сделок", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", baseResp.Topic, "err", err)
 
 	// 	}
 	// 	// Логика обработки сделок
-	// 	slog.Info("Получены сделки", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "trades", trades)
+	// 	slog.Info("Получены сделки", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", baseResp.Topic, "trades", trades)
 
 	// case strings.HasPrefix(baseResp.Topic, "kline"):
 	// 	//если получена последняя свеча kline
 
-	// 	// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
+	// 	// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "message", string(message))
 
 	// 	var klines []WsBybitKlineItem
 	// 	if err := json.Unmarshal(baseResp.Data, &klines); err != nil {
-	// 		slog.Error("Ошибка парсинга последней свечи Kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
+	// 		slog.Error("Ошибка парсинга последней свечи Kline", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", baseResp.Topic, "err", err)
 
 	// 	}
 
 	// 	// Логика обработки последних свечей
-	// 	slog.Info("Получена последняя свечка kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "klines", klines)
+	// 	slog.Info("Получена последняя свечка kline", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", baseResp.Topic, "klines", klines)
 
 	// 	return
 	// }
 
-	slog.Warn("Ws сообщение не обработано", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
+	slog.Warn("Ws сообщение не обработано", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "message", string(message))
 
 	// }
 	// }
 }
 
-// формирует топик для получения потока сделок
-// func (b *BybitClient) WsFormTopicGetTrades(cmdMsg shared.CmdChanMsg) (string, error) {
-// 	//получим аргументы сообщения - это массив строк, первая из которых в данном случае должен быть контракт
-// 	args := cmdMsg.Args
+// подписывается на канал получения последней свечи
+func (b *BybitClient) WsSubscribeLastCandle(exchange *shared.Exchange, contract string, category string, interval string) {
 
-// 	if len(args) == 0 {
-// 		return "", fmt.Errorf("Ошибка WsFormTopicGetTrades: len(args) ==0")
-// 	}
+	//конвертируем интервал во внутренний
+	intervalConverted, err := b.ConvertInterval(interval)
+	if err != nil {
+		slog.Error("Ошибка не удалось конвертировать интервал")
+		return
+	}
 
-// 	topic := fmt.Sprintf("publicTrade.%s", args[0])
-// 	return topic, nil
+	//получим вебсокет
+	var ws *shared.WsData
+	var ok bool
+	switch category {
+	case "spot":
+		//получим ws спота
+		ws, ok = exchange.Ws["spot"]
+		if !ok {
+			slog.Error("Не удалось найти ws spot")
+			return
+		}
 
-// }
+	case "perpetual", "futures":
+		//получим ws спота
+		ws, ok = exchange.Ws["linear"]
+		if !ok {
+			slog.Error("Не удалось найти ws linear")
+			return
+		}
+
+	default:
+		slog.Error("Ошибка в запросе: такой категории не существует")
+		return
+	}
+
+	//получим текущий список топиков для вебсокета
+	ws.Lock()
+	topicListCopy := make([]string, len(ws.TopicList))
+	copy(topicListCopy, ws.TopicList)
+	ws.Unlock()
+
+	//сформируем топик
+	klineTopik := fmt.Sprintf("kline.%s.%s", intervalConverted, contract)
+
+	// если категория не содержит запись о подписке
+	if !slices.Contains(topicListCopy, klineTopik) {
+		slog.Warn("Топик не открыт")
+
+		if ws.CmdChan == nil {
+			slog.Warn("Канал для управления ws не определен")
+			return
+		}
+
+		// составим сообщение
+		cmdMsg := shared.CmdChanMsg{
+			ID:         exchange.GenID.Next(),
+			Action:     "subscribe",
+			Topic:      klineTopik,
+			DeleteTime: time.Now().Add(exchange.FetchIntervals.WsCmdMsgDeleteDelta),
+		}
+
+		// Отправляем сообщение в канал управления ws
+		ws.CmdChan <- cmdMsg
+
+	}
+}
 
 func (b *BybitClient) MakeKlineKey(contract string, category string, interval string) (string, error) {
 

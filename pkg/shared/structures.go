@@ -14,10 +14,12 @@ type Exchange struct {
 	ExchangeName   string
 	AllSymbols     map[string]*SymbolData
 	FetchIntervals FetchIntervals
+	KlineLimit     string
 	Client         Client
 
 	AllKlineData KlineDataMapMu
-	Ws           map[string]*WsData
+
+	Ws map[string]*WsData
 
 	GenID *GenIDMu
 }
@@ -94,6 +96,7 @@ type KlineDataMu struct {
 }
 
 type KlineData struct {
+	Symbol   string
 	Contract string
 	Category string
 	Interval string
@@ -271,8 +274,11 @@ type FetchIntervals struct {
 	RestDataGetInterval    time.Duration
 	LinearDataGetInterval  time.Duration
 	OptionsDataGetInterval time.Duration
-	WsDeadLineDelta        time.Duration
-	WsCmdMsgDeleteDelta    time.Duration
+
+	KlineDeleteDeltaTime time.Duration
+
+	WsDeadLineDelta     time.Duration
+	WsCmdMsgDeleteDelta time.Duration
 }
 
 type SymbolDataToDb struct {

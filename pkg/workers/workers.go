@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"crypto_options_screener/pkg/shared"
@@ -81,10 +82,10 @@ func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
 }
 
 // получает данные kline и сохраняет их в общем объекте
-func GetKlineData(exchange *shared.Exchange, symbol string, contract string, category string, interval string, limit string, KlineDeleteDeltaTime time.Duration) {
+func GetKlineData(exchange *shared.Exchange, symbol string, contract string, category string, interval string) {
 
 	//получим данные
-	klines, err := exchange.Client.GetKline(contract, category, interval, limit)
+	klines, err := exchange.Client.GetKline(contract, category, interval, exchange.KlineLimit)
 	if err != nil {
 		slog.Error("Ошибка при получении kline", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval, "err", err)
 		return
@@ -118,6 +119,7 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 
 		//заполним внутренний объект начальными значениями
 		exchange.AllKlineData.KlineDataMap[key].KlineData = shared.KlineData{
+			Symbol:   symbol,
 			Contract: contract,
 			Category: category,
 			Interval: interval,
@@ -125,7 +127,7 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 			Klines:     [][]string{},
 			LastCandle: []string{},
 
-			DeleteTime: time.Now().Add(KlineDeleteDeltaTime),
+			DeleteTime: time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime),
 		}
 		exchange.AllKlineData.Unlock()
 
@@ -162,117 +164,117 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 //------- REST ВОРКЕРЫ ------
 
 // получает данные с определенным интервалом и записывает их в бд
-func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange, KlineDeleteDeltaTime time.Duration) {
+// func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange, KlineDeleteDeltaTime time.Duration) {
 
-	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
+// 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
-	//создадим тикер который каждые 1 секунду будет срабатывать
-	ticker := time.NewTicker(1 * time.Second)
-	defer func() {
-		ticker.Stop()
-		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
-	}()
+// 	//создадим тикер который каждые 1 секунду будет срабатывать
+// 	ticker := time.NewTicker(1 * time.Second)
+// 	defer func() {
+// 		ticker.Stop()
+// 		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
+// 	}()
 
-	//переменная для остановке
+// 	//переменная для остановке
 
-	for {
-		select {
-		//если тикер дал тик
-		case <-ticker.C:
+// 	for {
+// 		select {
+// 		//если тикер дал тик
+// 		case <-ticker.C:
 
-			// fmt.Print("тик\n")
+// 			// fmt.Print("тик\n")
 
-			//получим текущее время
-			now := time.Now().UTC()
+// 			//получим текущее время
+// 			now := time.Now().UTC()
 
-			//отбросим все до секунды
-			now = now.Truncate(time.Second)
+// 			//отбросим все до секунды
+// 			now = now.Truncate(time.Second)
 
-			//получим секунды
-			seconds := now.Second()
+// 			//получим секунды
+// 			seconds := now.Second()
 
-			//получим минуты
-			minutes := now.Minute()
+// 			//получим минуты
+// 			minutes := now.Minute()
 
-			// на каждой 15 минуте и 10 секунде
-			if (minutes%15 == 0) && seconds == 10 {
+// 			// на каждой 15 минуте и 10 секунде
+// 			if (minutes%15 == 0) && seconds == 10 {
 
-				//для каждого символа для текущей биржи
-				for i := range exchange.AllSymbols {
+// 				//для каждого символа для текущей биржи
+// 				for i := range exchange.AllSymbols {
 
-					//потокобезопасно получим мап с данными kline
-					exchange.AllKlineData.Lock()
-					KlineDataMap := exchange.AllKlineData.KlineDataMap
-					exchange.AllKlineData.Unlock()
+// 					//потокобезопасно получим мап с данными kline
+// 					exchange.AllKlineData.Lock()
+// 					KlineDataMap := exchange.AllKlineData.KlineDataMap
+// 					exchange.AllKlineData.Unlock()
 
-					//для каждой записи kline
-					for j := range KlineDataMap {
+// 					//для каждой записи kline
+// 					for j := range KlineDataMap {
 
-						//фильтр по интервалу
-						if KlineDataMap[j].KlineData.Interval == "15m" {
+// 						//фильтр по интервалу
+// 						if KlineDataMap[j].KlineData.Interval == "15m" {
 
-							//получим и сохраним в общий объект
-							GetKlineData(
-								exchange,
-								exchange.AllSymbols[i].Symbol,
-								KlineDataMap[j].KlineData.Contract,
-								KlineDataMap[j].KlineData.Category,
-								KlineDataMap[j].KlineData.Interval,
-								"1000",
-								KlineDeleteDeltaTime,
-							)
-							//сделаем паузу между запросами
-							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-						}
-					}
-				}
-			}
-			//на каждой часовой минуте и 10 секунде
-			if minutes == 0 && seconds == 10 {
+// 							//получим и сохраним в общий объект
+// 							GetKlineData(
+// 								exchange,
+// 								exchange.AllSymbols[i].Symbol,
+// 								KlineDataMap[j].KlineData.Contract,
+// 								KlineDataMap[j].KlineData.Category,
+// 								KlineDataMap[j].KlineData.Interval,
+// 								"1000",
+// 								KlineDeleteDeltaTime,
+// 							)
+// 							//сделаем паузу между запросами
+// 							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+// 						}
+// 					}
+// 				}
+// 			}
+// 			//на каждой часовой минуте и 10 секунде
+// 			if minutes == 0 && seconds == 10 {
 
-				//для каждого символа для текущей биржи
-				for i := range exchange.AllSymbols {
+// 				//для каждого символа для текущей биржи
+// 				for i := range exchange.AllSymbols {
 
-					//потокобезопасно получим мап с данными kline
-					exchange.AllKlineData.Lock()
-					KlineDataMap := exchange.AllKlineData.KlineDataMap
-					exchange.AllKlineData.Unlock()
+// 					//потокобезопасно получим мап с данными kline
+// 					exchange.AllKlineData.Lock()
+// 					KlineDataMap := exchange.AllKlineData.KlineDataMap
+// 					exchange.AllKlineData.Unlock()
 
-					//для каждого интервала - нужно чтобы интервалы шли последовательно
-					for _, interval := range []string{"1h", "1D", "1W"} {
+// 					//для каждого интервала - нужно чтобы интервалы шли последовательно
+// 					for _, interval := range []string{"1h", "1D", "1W"} {
 
-						//для каждой записи kline
-						for j := range KlineDataMap {
+// 						//для каждой записи kline
+// 						for j := range KlineDataMap {
 
-							//фильтр по интервалу
-							if KlineDataMap[j].KlineData.Interval == interval {
+// 							//фильтр по интервалу
+// 							if KlineDataMap[j].KlineData.Interval == interval {
 
-								//получим и сохраним в общий объект
-								GetKlineData(
-									exchange,
-									exchange.AllSymbols[i].Symbol,
-									KlineDataMap[j].KlineData.Contract,
-									KlineDataMap[j].KlineData.Category,
-									KlineDataMap[j].KlineData.Interval,
-									"1000",
-									KlineDeleteDeltaTime,
-								)
-								//сделаем паузу между запросами
-								time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-							}
-						}
-					}
-				}
-			}
+// 								//получим и сохраним в общий объект
+// 								GetKlineData(
+// 									exchange,
+// 									exchange.AllSymbols[i].Symbol,
+// 									KlineDataMap[j].KlineData.Contract,
+// 									KlineDataMap[j].KlineData.Category,
+// 									KlineDataMap[j].KlineData.Interval,
+// 									"1000",
+// 									KlineDeleteDeltaTime,
+// 								)
+// 								//сделаем паузу между запросами
+// 								time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+// 							}
+// 						}
+// 					}
+// 				}
+// 			}
 
-		//если работа программы остановлены
-		case <-ctx.Done():
-			// Завершаем работу функции по контексту - все defer отрабатают автоматически
-			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
-			return
-		}
-	}
-}
+// 		//если работа программы остановлены
+// 		case <-ctx.Done():
+// 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
+// 			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
+// 			return
+// 		}
+// 	}
+// }
 
 // воркер для получения данных по опционам по таймеру
 func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
@@ -476,12 +478,57 @@ func ExpiredDataDeleteTimer(ctx context.Context, exchange *shared.Exchange, delt
 
 			//если есть ключи для удаления
 			if len(keysToDelete) > 0 {
+
+				//удалим записи kline
 				exchange.AllKlineData.Lock()
-				for _, k := range keysToDelete {
-					delete(exchange.AllKlineData.KlineDataMap, k)
-					slog.Info("Запись kline удалена по истечению времени", "KlineDataMap[k]", exchange.AllKlineData.KlineDataMap[k])
+				for i := range keysToDelete {
+					delete(exchange.AllKlineData.KlineDataMap, keysToDelete[i])
+					slog.Warn("Запись kline удалена по истечению времени", "keysToDelete[i]", keysToDelete[i])
 				}
 				exchange.AllKlineData.Unlock()
+
+				//для каждого ключа
+				for i := range keysToDelete {
+					//разделим ключ
+					keySplitted := strings.Split(keysToDelete[i], ":")
+					//если это верный формат ключа
+					if len(keySplitted) == 2 {
+						category := keySplitted[0]
+						topic := keySplitted[1]
+
+						//для каждого вебсокета
+						for wsKey := range exchange.Ws {
+							ws := exchange.Ws[wsKey]
+							//категория ключа для удаления и ключ вебсокета совпадают
+							if wsKey == category {
+
+								ws.Lock()
+								// найдем индекс топика в списке топиков
+								if idx := slices.Index(ws.TopicList, topic); idx != -1 {
+									// Удаляем топик по найденному индексу
+									ws.TopicList = slices.Delete(ws.TopicList, idx, idx+1)
+									ws.Unlock()
+
+									//сформируем команду
+									cmdMsg := shared.CmdChanMsg{
+										ID:         exchange.GenID.Next(),
+										Action:     "unsubscribe",
+										Topic:      topic,
+										DeleteTime: time.Now().Add(exchange.FetchIntervals.WsCmdMsgDeleteDelta),
+									}
+
+									// Отправляем команду в канал управления ws
+									ws.CmdChan <- cmdMsg
+
+									slog.Warn("Отправлена команда unsubscribe", "cmdMsg", cmdMsg)
+
+									break
+								}
+								ws.Unlock()
+							}
+						}
+					}
+				}
 			}
 
 			//для каждого вебсокета
