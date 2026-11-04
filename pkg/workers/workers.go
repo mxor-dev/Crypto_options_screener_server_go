@@ -197,7 +197,7 @@ func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
 			minutes := now.Minute()
 
 			// на каждой 15 минуте и 10 секунде
-			if (minutes%15 == 0) && seconds == 10 {
+			if (minutes%15 == 0) && seconds == 5 {
 
 				//для каждого символа для текущей биржи
 				for i := range exchange.AllSymbols {
@@ -228,7 +228,7 @@ func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
 				}
 			}
 			//на каждой часовой минуте и 10 секунде
-			if minutes == 0 && seconds == 10 {
+			if minutes == 0 && seconds == 5 {
 
 				//для каждого символа для текущей биржи
 				for i := range exchange.AllSymbols {

@@ -104,7 +104,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, wsKey string
 						go exchange.Client.WsPingTimer(ctx, exchange, pingStopChan, wsKey)
 
 						//текущий вебсокет
-						ws := exchange.Ws[baseEndPoint]
+						ws := exchange.Ws[wsKey]
 
 						//копируем топики под мьютексом во временный слайс
 						ws.Lock()
