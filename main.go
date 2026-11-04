@@ -165,13 +165,13 @@ func main() {
 			// Получаем ПРЯМОЙ указатель на объект в мапе, чтобы менять оригинал
 			symbolData := AllExchanges[exchangeName].AllSymbols[symbolName]
 
-			// Инициализируем мапу клайнов (Мьютексы на старте лочить НЕ НУЖНО)
-			symbolData.AllKlineData = shared.KlineDataMapMu{
-				KlineDataMap: make(map[string]*shared.KlineDataMu),
-			}
-
 			// Инициализируем пустой слайс для опционов
 			symbolData.OptionsData = []shared.OptionsData{}
+		}
+
+		// Инициализируем мапу клайнов (Мьютексы на старте лочить НЕ НУЖНО)
+		AllExchanges[exchangeName].AllKlineData = shared.KlineDataMapMu{
+			KlineDataMap: make(map[string]*shared.KlineDataMu),
 		}
 
 		AllExchanges[exchangeName].Ws = map[string]*shared.WsData{}
@@ -358,7 +358,7 @@ func main() {
 			return
 		}
 		//проверим есть ли такая биржа
-		SymbolData, ok := exchange.AllSymbols[req.Symbol]
+		_, ok = exchange.AllSymbols[req.Symbol]
 		if !ok {
 			slog.Error("Ошибка в запросе: такого символа не существует", "url", "/api/kline_data", "req", req)
 
@@ -378,21 +378,15 @@ func main() {
 			LastCandle:   []string{},
 		}
 
-		//конвертируем интервал во внутренний
-		intervalConverted, err := exchange.Client.ConvertInterval(req.Interval)
+		//получим ключ
+		key, err := exchange.Client.MakeKlineKey(req.Contract, req.Category, req.Interval)
 		if err != nil {
-			slog.Error("Ошибка не удалось конвертировать интервал", "url", "/api/kline_data", "req", req)
-
-			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка сервера"})
+			slog.Error("Ошибка при получении ключа", "url", "/api/kline_data", "req", req)
 			return
 		}
-
-		//составим ключ
-		key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, intervalConverted)
-		SymbolData.AllKlineData.RLock()
-		KlineDataMu, ok := SymbolData.AllKlineData.KlineDataMap[key]
-		SymbolData.AllKlineData.RUnlock()
+		exchange.AllKlineData.RLock()
+		KlineDataMu, ok := exchange.AllKlineData.KlineDataMap[key]
+		exchange.AllKlineData.RUnlock()
 
 		//если данные не найдены
 		if !ok {
@@ -403,9 +397,9 @@ func main() {
 			workers.GetKlineData(exchange, req.Symbol, req.Contract, req.Category, req.Interval, KlineLimit, KlineDeleteDeltaTime)
 
 			//еще раз обратимя к данным они уже должны быть - предыдущая функция синхранная
-			SymbolData.AllKlineData.RLock()
-			KlineDataMu, ok := SymbolData.AllKlineData.KlineDataMap[key]
-			SymbolData.AllKlineData.RUnlock()
+			exchange.AllKlineData.RLock()
+			KlineDataMu, ok := exchange.AllKlineData.KlineDataMap[key]
+			exchange.AllKlineData.RUnlock()
 
 			if !ok {
 				slog.Error("Ошибка в запросе: после получения начальных данных, данные kline не находяться", "url", "/api/kline_data", "req", req)
@@ -591,10 +585,15 @@ func main() {
 
 			}
 
-			key := fmt.Sprintf("%s:%s:%s", req.Contract, req.Category, intervalConverted)
-			exchange.AllSymbols[req.Symbol].AllKlineData.RLock()
-			KlineDataMu, ok := exchange.AllSymbols[req.Symbol].AllKlineData.KlineDataMap[key]
-			exchange.AllSymbols[req.Symbol].AllKlineData.RUnlock()
+			//получим ключ
+			key, err := exchange.Client.MakeKlineKey(req.Contract, req.Category, req.Interval)
+			if err != nil {
+				slog.Error("Ошибка при получении ключа", "url", "/api/last_candle", "req", req)
+				return
+			}
+			exchange.AllKlineData.RLock()
+			KlineDataMu, ok := exchange.AllKlineData.KlineDataMap[key]
+			exchange.AllKlineData.RUnlock()
 
 			//если записи данных kline для текущего ключа не существует
 			if !ok {
@@ -615,13 +614,13 @@ func main() {
 			lastCandle := KlineDataMu.KlineData.LastCandle
 			KlineDataMu.Unlock()
 
-			slog.Warn("Текущая последняя свеча", "url", "/api/last_candle", "req", req, "lastCandle", lastCandle)
-
 			//дадим ответ
 			c.JSON(http.StatusOK, gin.H{
 				"status": "success",
 				"data":   lastCandle,
 			})
+
+			slog.Warn("Отправлена последняя свеча", "url", "/api/last_candle", "req", req, "lastCandle", lastCandle)
 
 			return
 		}

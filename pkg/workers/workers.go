@@ -2,7 +2,6 @@ package workers
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"runtime"
 	"slices"
@@ -96,31 +95,29 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 		slog.Warn("Длина данных len(klineData.Klines) == 0", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval)
 		return
 	}
-	//конвертируем интервал во внутренний
-	intervalConverted, err := exchange.Client.ConvertInterval(interval)
-	if err != nil {
-		slog.Error("Ошибка не удалось конвертировать интервал", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval, "err", err)
-		return
-	}
 
 	//получим ключ
-	key := fmt.Sprintf("%s:%s:%s", contract, category, intervalConverted)
-	exchange.AllSymbols[symbol].AllKlineData.RLock()
-	KlineData, ok := exchange.AllSymbols[symbol].AllKlineData.KlineDataMap[key]
-	exchange.AllSymbols[symbol].AllKlineData.RUnlock()
+	key, err := exchange.Client.MakeKlineKey(contract, category, interval)
+	if err != nil {
+		slog.Error("Ошибка при получении ключа", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval, "err", err)
+		return
+	}
+	exchange.AllKlineData.RLock()
+	KlineData, ok := exchange.AllKlineData.KlineDataMap[key]
+	exchange.AllKlineData.RUnlock()
 
 	//если запись не существует
 	if !ok {
-		slog.Warn("Записи exchange.AllSymbols[symbol].KlineData.KlineDataMap[key] не существует", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval)
+		slog.Warn("Записи exchange.KlineData.KlineDataMap[key] не существует", "exchangeName", exchange.ExchangeName, "key", key)
 
 		//создадим данные с таким ключом
-		exchange.AllSymbols[symbol].AllKlineData.Lock()
+		exchange.AllKlineData.Lock()
 
 		//сделаем пустой объект с мьютексом
-		exchange.AllSymbols[symbol].AllKlineData.KlineDataMap[key] = &shared.KlineDataMu{}
+		exchange.AllKlineData.KlineDataMap[key] = &shared.KlineDataMu{}
 
 		//заполним внутренний объект начальными значениями
-		exchange.AllSymbols[symbol].AllKlineData.KlineDataMap[key].KlineData = shared.KlineData{
+		exchange.AllKlineData.KlineDataMap[key].KlineData = shared.KlineData{
 			Contract: contract,
 			Category: category,
 			Interval: interval,
@@ -130,12 +127,12 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 
 			DeleteTime: time.Now().Add(KlineDeleteDeltaTime),
 		}
-		exchange.AllSymbols[symbol].AllKlineData.Unlock()
+		exchange.AllKlineData.Unlock()
 
 		//еще раз получим уже существующие данные
-		KlineData, _ = exchange.AllSymbols[symbol].AllKlineData.KlineDataMap[key]
+		KlineData, _ = exchange.AllKlineData.KlineDataMap[key]
 
-		slog.Info("Создана запись exchange.AllSymbols[symbol].KlineData.KlineDataMap[key]", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval)
+		slog.Info("Создана запись exchange.KlineData.KlineDataMap[key]", "exchangeName", exchange.ExchangeName, "key", key)
 
 	}
 
@@ -204,9 +201,9 @@ func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange, KlineDele
 				for i := range exchange.AllSymbols {
 
 					//потокобезопасно получим мап с данными kline
-					exchange.AllSymbols[i].AllKlineData.Lock()
-					KlineDataMap := exchange.AllSymbols[i].AllKlineData.KlineDataMap
-					exchange.AllSymbols[i].AllKlineData.Unlock()
+					exchange.AllKlineData.Lock()
+					KlineDataMap := exchange.AllKlineData.KlineDataMap
+					exchange.AllKlineData.Unlock()
 
 					//для каждой записи kline
 					for j := range KlineDataMap {
@@ -237,9 +234,9 @@ func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange, KlineDele
 				for i := range exchange.AllSymbols {
 
 					//потокобезопасно получим мап с данными kline
-					exchange.AllSymbols[i].AllKlineData.Lock()
-					KlineDataMap := exchange.AllSymbols[i].AllKlineData.KlineDataMap
-					exchange.AllSymbols[i].AllKlineData.Unlock()
+					exchange.AllKlineData.Lock()
+					KlineDataMap := exchange.AllKlineData.KlineDataMap
+					exchange.AllKlineData.Unlock()
 
 					//для каждого интервала - нужно чтобы интервалы шли последовательно
 					for _, interval := range []string{"1h", "1D", "1W"} {
@@ -461,34 +458,30 @@ func ExpiredDataDeleteTimer(ctx context.Context, exchange *shared.Exchange, delt
 			//получим текущее время
 			now := time.Now().UTC()
 
-			//для каждого символа
-			for j := range exchange.AllSymbols {
-				//ключи для удаления
-				var keysToDelete []string
+			//ключи для удаления
+			var keysToDelete []string
 
-				//блокируем мапу для чтения
-				exchange.AllSymbols[j].AllKlineData.RLock()
-				for k, klineMu := range exchange.AllSymbols[j].AllKlineData.KlineDataMap {
-					klineMu.Lock()
-					//проверим что текущее время больше записанного
-					if now.After(klineMu.KlineData.DeleteTime) {
-						//запишем ключ
-						keysToDelete = append(keysToDelete, k)
-					}
-					klineMu.Unlock()
+			//блокируем мапу для чтения
+			exchange.AllKlineData.RLock()
+			for k, klineMu := range exchange.AllKlineData.KlineDataMap {
+				klineMu.Lock()
+				//проверим что текущее время больше записанного
+				if now.After(klineMu.KlineData.DeleteTime) {
+					//запишем ключ
+					keysToDelete = append(keysToDelete, k)
 				}
-				exchange.AllSymbols[j].AllKlineData.RUnlock()
+				klineMu.Unlock()
+			}
+			exchange.AllKlineData.RUnlock()
 
-				//если есть ключи для удаления
-				if len(keysToDelete) > 0 {
-					exchange.AllSymbols[j].AllKlineData.Lock()
-					for _, k := range keysToDelete {
-						delete(exchange.AllSymbols[j].AllKlineData.KlineDataMap, k)
-						slog.Info("Запись kline удалена по истечению времени", "KlineDataMap[k]", exchange.AllSymbols[j].AllKlineData.KlineDataMap[k])
-					}
-					exchange.AllSymbols[j].AllKlineData.Unlock()
+			//если есть ключи для удаления
+			if len(keysToDelete) > 0 {
+				exchange.AllKlineData.Lock()
+				for _, k := range keysToDelete {
+					delete(exchange.AllKlineData.KlineDataMap, k)
+					slog.Info("Запись kline удалена по истечению времени", "KlineDataMap[k]", exchange.AllKlineData.KlineDataMap[k])
 				}
-
+				exchange.AllKlineData.Unlock()
 			}
 
 			//для каждого вебсокета
@@ -568,20 +561,17 @@ func GetExangeStateTimer(ctx context.Context, exchange *shared.Exchange, deltaTi
 		select {
 		//если тикер дал тик
 		case <-ticker.C:
-			//для каждого символа
-			for i := range exchange.AllSymbols {
 
-				var KlineDataMapKeys []string
+			var KlineDataMapKeys []string
 
-				exchange.AllSymbols[i].AllKlineData.RLock()
-				KlineDataMap := exchange.AllSymbols[i].AllKlineData.KlineDataMap
-				for key := range KlineDataMap {
-					KlineDataMapKeys = append(KlineDataMapKeys, key)
-				}
-				exchange.AllSymbols[i].AllKlineData.RUnlock()
-
-				slog.Debug("Запрашиваемые Klines", "ExchangeName", exchange.ExchangeName, "Symbol", exchange.AllSymbols[i].Symbol, "KlineDataMapKeys", KlineDataMapKeys)
+			exchange.AllKlineData.RLock()
+			KlineDataMap := exchange.AllKlineData.KlineDataMap
+			for key := range KlineDataMap {
+				KlineDataMapKeys = append(KlineDataMapKeys, key)
 			}
+			exchange.AllKlineData.RUnlock()
+
+			slog.Debug("Запрашиваемые Klines", "ExchangeName", exchange.ExchangeName, "KlineDataMapKeys", KlineDataMapKeys)
 
 			//для подключенных вебсокетов
 			for baseEndPoint := range exchange.Ws {

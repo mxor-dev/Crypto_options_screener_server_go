@@ -19,6 +19,7 @@ type Client interface {
 	WsPingTimer(ctx context.Context, conn *websocket.Conn, stopChan chan struct{}, exchangeName string, baseEndPoint string) // функция проверки пинга разная в зависимости от биржи
 	WsDecodeMessage(exchange *Exchange, baseEndPoint string, conn *websocket.Conn, message []byte)                           // обработка сообщение и передача данных в общее хранилище
 
+	MakeKlineKey(contract string, category string, interval string) (string, error) //формирует ключ для данных kline
 	// WsFormTopicGetTrades(cmdMsg CmdChanMsg) (string, error) //формирует топики для получения последних сделок
 	// WsDecodePong(message []byte) (bool, error)
 	// WsDecodeLinearLastPrice(message []byte) (LastPriceResponse, error)

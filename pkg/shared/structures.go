@@ -16,7 +16,8 @@ type Exchange struct {
 	FetchIntervals FetchIntervals
 	Client         Client
 
-	Ws map[string]*WsData
+	AllKlineData KlineDataMapMu
+	Ws           map[string]*WsData
 
 	GenID *GenIDMu
 }
@@ -27,8 +28,6 @@ type SymbolData struct {
 	FetchFilter []string
 
 	Info InfoMu
-
-	AllKlineData KlineDataMapMu
 
 	OptionsData []OptionsData //протом проработать в mutex
 }

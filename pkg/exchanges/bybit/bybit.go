@@ -847,186 +847,178 @@ func (b *BybitClient) WsPingTimer(ctx context.Context, conn *websocket.Conn, sto
 
 // обработка сообщение и передача данных в общее хранилище
 func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint string, conn *websocket.Conn, message []byte) {
-	//еcли ответ - пустое ообщение - это переподключение
-	if string(message) == "" {
-		slog.Debug("Ws переподключен", "ExchangeName", exchange.ExchangeName)
-	} else {
+	// //еcли ответ - пустое ообщение - это переподключение
+	// if string(message) == "" {
+	// 	slog.Debug("Ws переподключен", "ExchangeName", exchange.ExchangeName)
+	// } else {
 
-		//базовый ответ
-		var resp WsBybitBaseResponse
-		if err := json.Unmarshal(message, &resp); err != nil {
-			slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
-			return
-		}
-
-		switch resp.RetMsg {
-		case "pong":
-			// если это сообщение pong
-
-			slog.Debug("Ws от сервера получен ответ pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
-
-			//передвинем дедлайн
-			err := conn.SetReadDeadline(time.Now().Add(exchange.FetchIntervals.WsDeadLineDelta))
-			if err != nil {
-				slog.Error("Ws ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "error", err)
-			}
-
-			return
-
-		case "subscribe":
-			//если это ответ на сообщение о подписке
-			// {\"success\":true,\"ret_msg\":\"subscribe\",\"conn_id\":\"dbhf1usmqckqr6btpve0-120x6\",\"req_id\":\"2\",\"op\":\"subscribe\"}"
-
-			//если подписка успешно оформлена
-			if resp.Success {
-
-				slog.Warn("Ws получено сообщение об успешной подписке", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
-
-				//возьмем вебсокет
-				ws := exchange.Ws[baseEndPoint]
-				ws.Lock()
-
-				//найдем топик по id
-				var topic string
-				for i := range ws.CmdBuffer {
-					if ws.CmdBuffer[i].ID == resp.ReqID {
-						topic = ws.CmdBuffer[i].Topic
-					}
-				}
-				//добавим топик
-				ws.TopicList = append(ws.TopicList, topic)
-				ws.Unlock()
-
-				return
-			}
-
-		}
-
-		// {\"type\":\"snapshot\",\"topic\":\"kline.15.BTCUSDT\",\"data\":[{\"start\":1793748600000,\"end\":1793749499999,\"interval\":\"15\",\"open\":\"77919\",\"close\":\"77804.3\",\"high\":\"77993.1\",\"low\":\"77804.3\",\"volume\":\"91.622619\",\"turnover\":\"7137154.9407247\",\"confirm\":false,\"timestamp\":1793749427563}],\"ts\":1793749427563}"
-
-		//разделим топик
-		topicSlice := strings.Split(resp.Topic, ".")
-		//если длин больше 1 в топике что то лежит, потому как Slice от "" дает длину 1
-		if len(topicSlice) > 1 {
-
-			//если нулевой элемент kline
-			if topicSlice[0] == "kline" {
-
-				//распарсим data
-				var klines []WsBybitKlineItem
-				if err := json.Unmarshal(resp.Data, &klines); err != nil {
-					slog.Error("Ошибка парсинга последней свечи Kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "err", err)
-					return
-				}
-
-				//получим контракт
-				contract := topicSlice[2]
-
-				//получим категорию
-				baseEndPointSlice := strings.Split(baseEndPoint, "/")
-				category := baseEndPointSlice[len(baseEndPointSlice)-1]
-
-				//получим интервал
-				interval := topicSlice[1]
-
-				//символ - удалим "USDT" от контракта
-				symbol := strings.TrimSuffix(contract, "USDT")
-
-				//сформируем ключ для поиска записи kline
-				key := fmt.Sprintf("%s:%s:%s", contract, category, interval)
-
-				//Блокируем общее хранилище на чтение
-				exchange.AllSymbols[symbol].AllKlineData.RLock()
-
-				// разблокировать ПРИ ЛЮБОМ ВЫХОДЕ из функции
-				defer exchange.AllSymbols[symbol].AllKlineData.RUnlock()
-
-				//ищем карту
-				klineDataMu, ok := exchange.AllSymbols[symbol].AllKlineData.KlineDataMap[key]
-				if !ok {
-					slog.Error("Ошибка поиска записи kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "symbol", symbol, "key", key)
-					return // Теперь тут RUnlock() вызовется автоматически благодаря defer! Никакого дедлока!
-				}
-
-				//Блокируем конкретную свечу на запись
-				klineDataMu.Lock()
-				// Изменяем последнюю свечку TOHLC
-				klineDataMu.KlineData.LastCandle = []string{
-					strconv.FormatInt(klines[0].Start, 10),
-					klines[0].Open,
-					klines[0].High,
-					klines[0].Low,
-					klines[0].Close,
-				}
-				klineDataMu.Unlock()
-
-				// slog.Debug("Последняя свеча kline обновлена", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "klines", klines)
-				return
-			}
-		}
-
-		//если это какоето другое сообщение
-		// if isPong == false {
-		// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
-
-		// //ответ на операцию subscribe/unsubscribe и другие
-		// var opResp WsBybitOpResponseStatus
-		// if err := json.Unmarshal(message, &opResp); err != nil {
-		// 	slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
-		// 	return
-		// }
-		// switch {
-		// case strings.HasPrefix(opResp.Topic, "publicTrade"):
-		// 	//если получены сделки
-		// 	var trades []WsBybitTradeItemShort
-		// 	if err := json.Unmarshal(opResp.Data, &trades); err != nil {
-		// 		slog.Error("Ошибка парсинга сделок", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
-
-		// 	}
-		// 	// Логика обработки сде
-		// }
-
-		//ответ с данными
-		// var baseResp WsBybitDataResponse
-		// if err := json.Unmarshal(message, &baseResp); err != nil {
-		// 	slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
-		// 	return
-		// }
-
-		// // Запускаем проверку топика. Используем strings.HasPrefix,
-		// // так как в конце топика всегда идет имя монеты (например, .BTCUSDT)
-		// switch {
-		// case strings.HasPrefix(baseResp.Topic, "publicTrade"):
-		// 	//если получены сделки
-		// 	var trades []WsBybitTradeItemShort
-		// 	if err := json.Unmarshal(baseResp.Data, &trades); err != nil {
-		// 		slog.Error("Ошибка парсинга сделок", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
-
-		// 	}
-		// 	// Логика обработки сделок
-		// 	slog.Info("Получены сделки", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "trades", trades)
-
-		// case strings.HasPrefix(baseResp.Topic, "kline"):
-		// 	//если получена последняя свеча kline
-
-		// 	// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
-
-		// 	var klines []WsBybitKlineItem
-		// 	if err := json.Unmarshal(baseResp.Data, &klines); err != nil {
-		// 		slog.Error("Ошибка парсинга последней свечи Kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
-
-		// 	}
-
-		// 	// Логика обработки последних свечей
-		// 	slog.Info("Получена последняя свечка kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "klines", klines)
-
-		// 	return
-		// }
-
-		slog.Warn("Ws сообщение не обработано", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
-
-		// }
+	//базовый ответ
+	var resp WsBybitBaseResponse
+	if err := json.Unmarshal(message, &resp); err != nil {
+		slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
+		return
 	}
+
+	// switch resp.RetMsg {
+	switch resp.Op {
+	case "ping":
+		// если это сообщение pong
+
+		slog.Debug("Ws от сервера получен ответ pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
+
+		//передвинем дедлайн
+		err := conn.SetReadDeadline(time.Now().Add(exchange.FetchIntervals.WsDeadLineDelta))
+		if err != nil {
+			slog.Error("Ws ошибка при декодировании pong", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "error", err)
+		}
+
+		return
+
+	case "subscribe":
+		//если это ответ на сообщение о подписке
+		// {\"success\":true,\"ret_msg\":\"subscribe\",\"conn_id\":\"dbhf1usmqckqr6btpve0-120x6\",\"req_id\":\"2\",\"op\":\"subscribe\"}"
+
+		//если подписка успешно оформлена
+		if resp.Success {
+
+			slog.Warn("Ws получено сообщение об успешной подписке", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
+
+			//возьмем вебсокет
+			ws := exchange.Ws[baseEndPoint]
+			ws.Lock()
+
+			//найдем топик по id
+			var topic string
+			for i := range ws.CmdBuffer {
+				if ws.CmdBuffer[i].ID == resp.ReqID {
+					topic = ws.CmdBuffer[i].Topic
+				}
+			}
+			//добавим топик
+			ws.TopicList = append(ws.TopicList, topic)
+			ws.Unlock()
+
+			return
+		}
+
+	}
+
+	// {\"type\":\"snapshot\",\"topic\":\"kline.15.BTCUSDT\",\"data\":[{\"start\":1793748600000,\"end\":1793749499999,\"interval\":\"15\",\"open\":\"77919\",\"close\":\"77804.3\",\"high\":\"77993.1\",\"low\":\"77804.3\",\"volume\":\"91.622619\",\"turnover\":\"7137154.9407247\",\"confirm\":false,\"timestamp\":1793749427563}],\"ts\":1793749427563}"
+
+	//разделим топик
+	topicSlice := strings.Split(resp.Topic, ".")
+	//если длин больше 1 в топике что то лежит, потому как Slice от "" дает длину 1
+	if len(topicSlice) > 1 {
+
+		//если нулевой элемент kline
+		if topicSlice[0] == "kline" {
+
+			//распарсим data
+			var klines []WsBybitKlineItem
+			if err := json.Unmarshal(resp.Data, &klines); err != nil {
+				slog.Error("Ошибка парсинга последней свечи Kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "err", err)
+				return
+			}
+
+			//получим категорию
+			baseEndPointSlice := strings.Split(baseEndPoint, "/")
+			category := baseEndPointSlice[len(baseEndPointSlice)-1]
+
+			//сформируем ключ для поиска записи kline
+			key := fmt.Sprintf("%s:%s", category, resp.Topic)
+
+			//Блокируем общее хранилище на чтение
+			exchange.AllKlineData.RLock()
+
+			// разблокировать ПРИ ЛЮБОМ ВЫХОДЕ из функции
+			defer exchange.AllKlineData.RUnlock()
+
+			//ищем карту
+			klineDataMu, ok := exchange.AllKlineData.KlineDataMap[key]
+			if !ok {
+				slog.Error("Ошибка поиска записи kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "key", key)
+				return // Теперь тут RUnlock() вызовется автоматически благодаря defer! Никакого дедлока!
+			}
+
+			//Блокируем конкретную свечу на запись
+			klineDataMu.Lock()
+			// Изменяем последнюю свечку TOHLC
+			klineDataMu.KlineData.LastCandle = []string{
+				strconv.FormatInt(klines[0].Start, 10),
+				klines[0].Open,
+				klines[0].High,
+				klines[0].Low,
+				klines[0].Close,
+			}
+			klineDataMu.Unlock()
+
+			// slog.Debug("Последняя свеча kline обновлена", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", resp.Topic, "klines", klines)
+			return
+		}
+	}
+
+	//если это какоето другое сообщение
+	// if isPong == false {
+	// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
+
+	// //ответ на операцию subscribe/unsubscribe и другие
+	// var opResp WsBybitOpResponseStatus
+	// if err := json.Unmarshal(message, &opResp); err != nil {
+	// 	slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
+	// 	return
+	// }
+	// switch {
+	// case strings.HasPrefix(opResp.Topic, "publicTrade"):
+	// 	//если получены сделки
+	// 	var trades []WsBybitTradeItemShort
+	// 	if err := json.Unmarshal(opResp.Data, &trades); err != nil {
+	// 		slog.Error("Ошибка парсинга сделок", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
+
+	// 	}
+	// 	// Логика обработки сде
+	// }
+
+	//ответ с данными
+	// var baseResp WsBybitDataResponse
+	// if err := json.Unmarshal(message, &baseResp); err != nil {
+	// 	slog.Error("Ws ошибка базового парсинга", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "err", err)
+	// 	return
+	// }
+
+	// // Запускаем проверку топика. Используем strings.HasPrefix,
+	// // так как в конце топика всегда идет имя монеты (например, .BTCUSDT)
+	// switch {
+	// case strings.HasPrefix(baseResp.Topic, "publicTrade"):
+	// 	//если получены сделки
+	// 	var trades []WsBybitTradeItemShort
+	// 	if err := json.Unmarshal(baseResp.Data, &trades); err != nil {
+	// 		slog.Error("Ошибка парсинга сделок", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
+
+	// 	}
+	// 	// Логика обработки сделок
+	// 	slog.Info("Получены сделки", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "trades", trades)
+
+	// case strings.HasPrefix(baseResp.Topic, "kline"):
+	// 	//если получена последняя свеча kline
+
+	// 	// slog.Warn("Ws пришло сообщение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
+
+	// 	var klines []WsBybitKlineItem
+	// 	if err := json.Unmarshal(baseResp.Data, &klines); err != nil {
+	// 		slog.Error("Ошибка парсинга последней свечи Kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "err", err)
+
+	// 	}
+
+	// 	// Логика обработки последних свечей
+	// 	slog.Info("Получена последняя свечка kline", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "topic", baseResp.Topic, "klines", klines)
+
+	// 	return
+	// }
+
+	slog.Warn("Ws сообщение не обработано", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint, "message", string(message))
+
+	// }
+	// }
 }
 
 // формирует топик для получения потока сделок
@@ -1042,6 +1034,24 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, baseEndPoint st
 // 	return topic, nil
 
 // }
+
+func (b *BybitClient) MakeKlineKey(contract string, category string, interval string) (string, error) {
+
+	intervalConverted, err := b.ConvertInterval(interval)
+	if err != nil {
+		return "", fmt.Errorf("Ошибка конвертации интервала: %s", err)
+	}
+
+	switch category {
+	case "spot":
+		return fmt.Sprintf("spot:kline.%s.%s", intervalConverted, contract), nil
+	case "perpetual", "futures":
+		return fmt.Sprintf("linear:kline.%s.%s", intervalConverted, contract), nil
+	default:
+		return "", fmt.Errorf("Ошибка конвертации интервала: нет такой категории %s", category)
+	}
+
+}
 
 //------- ВСПОМОГАТЕЛЬНЫЕ УНИКАЛЬНЫЕ ФУНКЦИИ КЛИЕНТА ------
 
