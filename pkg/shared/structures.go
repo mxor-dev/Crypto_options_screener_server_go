@@ -104,6 +104,8 @@ type KlineData struct {
 	Klines     [][]string //массив формат TOHLC
 	LastCandle []string   //одна свечка формат TOHLC
 
+	Ts time.Time
+
 	DeleteTime time.Time
 }
 

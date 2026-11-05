@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -132,9 +133,9 @@ func main() {
 				LinearDataGetInterval:  2 * time.Second,
 				OptionsDataGetInterval: 2 * time.Second,
 
-				// KlineDeleteDeltaTime := 30 * time.Second,
-				KlineDeleteDeltaTime: 1 * time.Minute,
-				// KlineDeleteDeltaTime := 1 * time.Hour,
+				// KlineDeleteDeltaTime : 30 * time.Second,
+				// KlineDeleteDeltaTime: 1 * time.Minute,
+				KlineDeleteDeltaTime: 1 * time.Hour,
 
 				WsDeadLineDelta:     30 * time.Second,
 				WsCmdMsgDeleteDelta: 30 * time.Second, //дальше уже вебсокет отключается
@@ -333,6 +334,7 @@ func main() {
 			Interval     string
 			Klines       [][]string
 			LastCandle   []string
+			Ts           string
 		}
 
 		// парсим данные
@@ -421,6 +423,7 @@ func main() {
 			response.Interval = KlineData.Interval
 			response.Klines = KlineData.Klines
 			response.LastCandle = KlineData.LastCandle
+			response.Ts = strconv.FormatInt(KlineData.Ts.UnixMilli(), 10)
 
 			//дадим ответ
 			c.JSON(http.StatusOK, gin.H{
@@ -440,6 +443,7 @@ func main() {
 			response.Interval = KlineData.Interval
 			response.Klines = KlineData.Klines
 			response.LastCandle = KlineData.LastCandle
+			response.Ts = strconv.FormatInt(KlineData.Ts.UnixMilli(), 10)
 
 			//дадим ответ
 			c.JSON(http.StatusOK, gin.H{

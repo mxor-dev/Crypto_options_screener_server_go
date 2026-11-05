@@ -127,6 +127,8 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 			Klines:     [][]string{},
 			LastCandle: []string{},
 
+			Ts: time.Now(), //запишем время получения
+
 			DeleteTime: time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime),
 		}
 		exchange.AllKlineData.Unlock()

@@ -975,7 +975,6 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 				return // Теперь тут RUnlock() вызовется автоматически благодаря defer! Никакого дедлока!
 			}
 
-			//Блокируем конкретную свечу на запись
 			klineDataMu.Lock()
 			// Изменяем последнюю свечку TOHLC
 			klineDataMu.KlineData.LastCandle = []string{
@@ -985,6 +984,8 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 				klines[0].Low,
 				klines[0].Close,
 			}
+			//отметим время измененея
+			klineDataMu.KlineData.Ts = time.Now()
 			klineDataMu.Unlock()
 
 			return
