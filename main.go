@@ -470,6 +470,7 @@ func main() {
 		//структура даннх ответа
 		type LastCandleResponse struct {
 			LastCandle []string
+			Ts         string
 		}
 
 		// парсим данные
@@ -511,6 +512,7 @@ func main() {
 			c.JSON(http.StatusOK, gin.H{
 				"status":     "noKlineData",
 				"lastCandle": "",
+				"ts":         "",
 			})
 			return
 		}
@@ -518,6 +520,7 @@ func main() {
 		KlineDataMu.Lock()
 		//получим данные последней свечки
 		lastCandle := KlineDataMu.KlineData.LastCandle
+		ts := KlineDataMu.KlineData.Ts
 		//продлим время жизни данным
 		KlineDataMu.KlineData.DeleteTime = time.Now().Add(exchange.FetchIntervals.WsDeadLineDelta)
 		KlineDataMu.Unlock()
@@ -526,6 +529,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{
 			"status":      "success",
 			"last_candle": lastCandle,
+			"ts":          ts,
 		})
 
 		slog.Warn("Отправлена последняя свеча", "url", "/api/last_candle", "req", req, "lastCandle", lastCandle)
