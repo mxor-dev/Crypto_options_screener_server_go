@@ -133,6 +133,9 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 		}
 		exchange.AllKlineData.Unlock()
 
+		// slog.Error("Текущее время", "time.Now()", time.Now())
+		// slog.Error("Время удаления kline", "DeleteTime", time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime))
+
 		//еще раз получим уже существующие данные
 		KlineData, _ = exchange.AllKlineData.KlineDataMap[key]
 
@@ -465,8 +468,13 @@ func ExpiredDataDeleteTimer(ctx context.Context, exchange *shared.Exchange, delt
 			exchange.AllKlineData.RLock()
 			for k, klineMu := range exchange.AllKlineData.KlineDataMap {
 				klineMu.Lock()
+
+				// slog.Error("Текущее время", "key", k, "time.Now()", time.Now())
+				// slog.Error("Время уделаения", "key", k, "klineMu.KlineData.DeleteTime", klineMu.KlineData.DeleteTime)
 				//проверим что текущее время больше записанного
 				if now.After(klineMu.KlineData.DeleteTime) {
+					// slog.Error("Время уделаения", "key", k, "klineMu.KlineData.DeleteTime", klineMu.KlineData.DeleteTime)
+
 					//запишем ключ
 					keysToDelete = append(keysToDelete, k)
 				}

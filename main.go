@@ -522,14 +522,14 @@ func main() {
 		lastCandle := KlineDataMu.KlineData.LastCandle
 		ts := KlineDataMu.KlineData.Ts
 		//продлим время жизни данным
-		KlineDataMu.KlineData.DeleteTime = time.Now().Add(exchange.FetchIntervals.WsDeadLineDelta)
+		KlineDataMu.KlineData.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
 		KlineDataMu.Unlock()
 
 		//дадим ответ
 		c.JSON(http.StatusOK, gin.H{
 			"status":      "success",
 			"last_candle": lastCandle,
-			"ts":          ts,
+			"ts":          strconv.FormatInt(ts.UnixMilli(), 10),
 		})
 
 		slog.Warn("Отправлена последняя свеча", "url", "/api/last_candle", "req", req, "lastCandle", lastCandle)
