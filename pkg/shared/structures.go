@@ -31,7 +31,7 @@ type SymbolData struct {
 
 	Info InfoMu
 
-	OptionsData []OptionsData //протом проработать в mutex
+	Tikers TikersMu
 }
 
 type InfoMu struct {
@@ -74,7 +74,7 @@ type SymbolInfo struct {
 	FuturesTickSize        string
 	FuturesPricePrecision  string
 
-	OptionContractNameArr []string
+	// OptionContractNameArr []string
 	OptionsMinOrderQty    string
 	OptionsTickSize       string
 	OptionsPricePrecision string
@@ -283,20 +283,52 @@ type FetchIntervals struct {
 	WsCmdMsgDeleteDelta time.Duration
 }
 
-type SymbolDataToDb struct {
-	ExchangeName    string
-	Symbol          string
-	LastPriceSpot   string
-	LastPriceLinear string
-	LinearData      []LinearData
-	OptionsData     []OptionsData
-	TimeMs          string
+// type SymbolDataToDb struct {
+// 	ExchangeName    string
+// 	Symbol          string
+// 	LastPriceSpot   string
+// 	LastPriceLinear string
+// 	LinearData      []LinearData
+// 	OptionsData     []OptionsData
+// 	TimeMs          string
+// }
+
+type TikersMu struct {
+	Spot      SpotTickers
+	Perpetual PerpetualTickers
+	Futures   []FuturesTickers
+	Options   []OptionsTickers
+	sync.Mutex
 }
 
-type LinearData struct {
+type SpotTickers struct {
+	Symbol    string
+	BidPrice  string
+	BidSize   string
+	AskPrice  string
+	AskSize   string
+	LastPrice string
 }
 
-type OptionsData struct {
+type PerpetualTickers struct {
+	Symbol    string
+	BidPrice  string
+	BidSize   string
+	AskPrice  string
+	AskSize   string
+	LastPrice string
+}
+
+type FuturesTickers struct {
+	Symbol    string
+	BidPrice  string
+	BidSize   string
+	AskPrice  string
+	AskSize   string
+	LastPrice string
+}
+
+type OptionsTickers struct {
 	Symbol       string
 	Series       string
 	MinMarkIv    string

@@ -278,60 +278,62 @@ func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
 }
 
 // воркер для получения данных по опционам по таймеру
-func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
+// func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
-	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
+// 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
-	//создадим тикер который будет срабатывать каждые 1 секунду
-	ticker := time.NewTicker(1 * time.Second)
-	defer func() {
-		ticker.Stop()
-		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
-	}()
+// 	//создадим тикер который будет срабатывать каждые 1 секунду
+// 	ticker := time.NewTicker(1 * time.Second)
+// 	defer func() {
+// 		ticker.Stop()
+// 		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
+// 	}()
 
-	for {
-		select {
-		//если тикер дал тик
-		case <-ticker.C:
+// 	for {
+// 		select {
+// 		//если тикер дал тик
+// 		case <-ticker.C:
 
-			//получим текущее время
-			now := time.Now().UTC()
+// 			//получим текущее время
+// 			now := time.Now().UTC()
 
-			//отбросим все до секунды
-			now = now.Truncate(time.Second)
+// 			//отбросим все до секунды
+// 			now = now.Truncate(time.Second)
 
-			//получим секунды
-			seconds := now.Second()
+// 			//получим секунды
+// 			seconds := now.Second()
 
-			// на каждой пятой секунде
-			if seconds%5 == 0 {
+// 			// на каждой пятой секунде
+// 			if seconds%5 == 0 {
 
-				// slog.Warn("Сработал тикер", "func", "GetOptionsDataTimer", "exchangeName", exchange.ExchangeName)
+// 				// slog.Warn("Сработал тикер", "func", "GetOptionsDataTimer", "exchangeName", exchange.ExchangeName)
 
-				//для каждого символа - через индекс потому что внутри мьютексы
-				for i := range exchange.AllSymbols {
+// 				//для каждого символа - через индекс потому что внутри мьютексы
+// 				for i := range exchange.AllSymbols {
 
-					//если для символа стоит отметка получать категорию опционы
-					if slices.Contains(exchange.AllSymbols[i].FetchFilter, "option") {
-						optionsData, err := exchange.Client.GetOptions(exchange.AllSymbols[i].Symbol)
-						if err != nil {
-							slog.Error("Ошибка при получении данных по опционам", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "err", err)
-						}
+// 					//если для символа стоит отметка получать категорию опционы
+// 					if slices.Contains(exchange.AllSymbols[i].FetchFilter, "option") {
+// 						optionsData, err := exchange.Client.GetOptionsTickers(exchange.AllSymbols[i].Symbol)
+// 						if err != nil {
+// 							slog.Error("Ошибка при получении данных по опционам", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "err", err)
+// 						}
 
-						//передадим данне по опционам в общую структуру
-						exchange.AllSymbols[i].OptionsData = optionsData
+// 						exchange.AllSymbols[i].OptionsData.Lock()
+// 						//передадим данне по опционам в общую структуру
+// 						exchange.AllSymbols[i].OptionsData.OptionsDataArr = optionsData
+// 						exchange.AllSymbols[i].OptionsData.Unlock()
 
-					}
-				}
-			}
+// 					}
+// 				}
+// 			}
 
-		case <-ctx.Done():
-			// Завершаем работу функции по контексту - все defer отрабатают автоматически
-			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
-			return
-		}
-	}
-}
+// 		case <-ctx.Done():
+// 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
+// 			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
+// 			return
+// 		}
+// 	}
+// }
 
 // ------- WEB SOCKET ВОРКЕРЫ ------
 

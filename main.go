@@ -172,8 +172,8 @@ func main() {
 			// Получаем ПРЯМОЙ указатель на объект в мапе, чтобы менять оригинал
 			symbolData := allExchanges[exchangeName].AllSymbols[symbolName]
 
-			// Инициализируем пустой слайс для опционов
-			symbolData.OptionsData = []shared.OptionsData{}
+			// Инициализируем пустую структуру для тикеров
+			symbolData.Tikers = shared.TikersMu{}
 		}
 
 		// Инициализируем мапу клайнов (Мьютексы на старте лочить НЕ НУЖНО)
@@ -215,8 +215,13 @@ func main() {
 			if allExchanges[exKey].Client != nil {
 				//запускаем воркеров
 
-				//получим информацию для всех монет на бирже и сохраним в бд
+				//получим информацию для всех монет на бирже
 				workers.GetAllSymbolsInfo(pool, allExchanges[exKey])
+
+				//последовательное получение тикеров
+				allExchanges[exKey].Client.GetAllTickersSequental(allExchanges[exKey])
+
+				panic("Стоп для отладки")
 
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
 				go workers.GetKlineDataTimer(ctx, allExchanges[exKey])
