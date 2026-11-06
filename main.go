@@ -218,13 +218,8 @@ func main() {
 				//получим информацию для всех монет на бирже
 				workers.GetAllSymbolsInfo(pool, allExchanges[exKey])
 
-				//последовательное получение тикеров
-				allExchanges[exKey].Client.GetAllTickersSequental(allExchanges[exKey])
-
-				// panic("Стоп для отладки")
-
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
-				go workers.GetKlineDataTimer(ctx, allExchanges[exKey])
+				go workers.GetDataSequentalTimer(ctx, allExchanges[exKey])
 
 				//в зависимости от биржи для получнеия последней свечи могут использоваться один или два ws воркера
 				switch exKey {

@@ -169,7 +169,7 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 //------- REST ВОРКЕРЫ ------
 
 // получает данные с определенным интервалом и записывает их в бд
-func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
+func GetDataSequentalTimer(ctx context.Context, exchange *shared.Exchange) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
@@ -200,6 +200,12 @@ func GetKlineDataTimer(ctx context.Context, exchange *shared.Exchange) {
 
 			//получим минуты
 			minutes := now.Minute()
+
+			// на каждой 5 секунде
+			if seconds%5 == 0 {
+				//последовательно получим данные
+				exchange.Client.GetAllTickersSequental(exchange)
+			}
 
 			// на каждой 15 минуте и 10 секунде
 			if (minutes%15 == 0) && seconds == 5 {

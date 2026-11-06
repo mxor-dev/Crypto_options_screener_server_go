@@ -791,6 +791,8 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 
 			// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "allSeriesMap", allSeriesMap)
 
+			var localAllOptionsTickers []shared.OptionsTickers
+
 			//для каждой серии
 			for series := range allSeriesMap {
 
@@ -969,22 +971,19 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 				}
 
 				//заполним данные для текущей серии опционов
-				localOptionsData := shared.OptionsTickers{
+				localOptionsTickers := shared.OptionsTickers{
 					Symbol:       symbol,
 					Series:       series,
 					MinMarkIv:    minMarkIvStr,
 					OptionsLines: localOptionsLines,
 				}
 
-				//добавим полученные данные по серии в итоговый массив
-				exchange.AllSymbols[symbol].Tikers.Lock()
-				exchange.AllSymbols[symbol].Tikers.Options = append(exchange.AllSymbols[symbol].Tikers.Options, localOptionsData)
-				exchange.AllSymbols[symbol].Tikers.Unlock()
+				localAllOptionsTickers = append(localAllOptionsTickers, localOptionsTickers)
 
 			}
-			exchange.AllSymbols[symbol].Tikers.Lock()
+
 			//сортируем итоговый результат по полю series по возрастанию времени доставки
-			slices.SortFunc(exchange.AllSymbols[symbol].Tikers.Options, func(a, b shared.OptionsTickers) int {
+			slices.SortFunc(localAllOptionsTickers, func(a, b shared.OptionsTickers) int {
 				timeA, errA := convert.SeriesToDeliveryTimeMs(a.Series)
 				timeB, errB := convert.SeriesToDeliveryTimeMs(b.Series)
 
@@ -1006,9 +1005,11 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 
 			})
 
+			//запишем полученные данные
+			exchange.AllSymbols[symbol].Tikers.Lock()
+			exchange.AllSymbols[symbol].Tikers.Options = localAllOptionsTickers
 			OptionsLen := len(exchange.AllSymbols[symbol].Tikers.Options)
 			// slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].Tikers.Options)
-
 			exchange.AllSymbols[symbol].Tikers.Unlock()
 
 			slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "OptionsLen", OptionsLen)
