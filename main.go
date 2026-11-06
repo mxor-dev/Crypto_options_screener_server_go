@@ -221,7 +221,7 @@ func main() {
 				//последовательное получение тикеров
 				allExchanges[exKey].Client.GetAllTickersSequental(allExchanges[exKey])
 
-				panic("Стоп для отладки")
+				// panic("Стоп для отладки")
 
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
 				go workers.GetKlineDataTimer(ctx, allExchanges[exKey])

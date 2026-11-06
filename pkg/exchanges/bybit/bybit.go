@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -452,534 +452,567 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 	// var futuresTickers shared.FuturesTickers
 	// var OptionsTickers shared.OptionsTickers
 
+	//*********** Spot **************
+
 	//для каждого символа
 	for symbol := range exchange.AllSymbols {
 
-		//*********** Spot **************
+		//получим информацию по символу
+		exchange.AllSymbols[symbol].Info.Lock()
+		symbolInfo := exchange.AllSymbols[symbol].Info.SymbolInfo
+		exchange.AllSymbols[symbol].Info.Unlock()
 
-		slog.Warn("Запрос данных spot", "exchangeName", exchange.ExchangeName, "symbol", symbol+"USDT", "category", "spot")
+		//если данные доступны
+		if symbolInfo.IsSpotAvailable {
 
-		//сформируем строку запроса options
-		url := fmt.Sprintf("%s/v5/market/tickers?symbol=%s&category=%s", baseEndPont, symbol+"USDT", "spot")
+			// slog.Info("Запрос данных spot", "exchangeName", exchange.ExchangeName, "symbol", symbol+"USDT", "category", "spot")
 
-		//выполним запрос
-		resp, err := http.Get(url)
-		if err != nil {
-			slog.Error("Ошбика Get запроса %s: %w", url, err)
-			return
-		}
-		defer resp.Body.Close()
+			//сформируем строку запроса options
+			url := fmt.Sprintf("%s/v5/market/tickers?symbol=%s&category=%s", baseEndPont, symbol+"USDT", "spot")
 
-		type SpotTickersResponse struct {
-			Result struct {
-				Category string `json:"category"`
-				List     []struct {
-					Symbol    string `json:"symbol"`
-					BidPrice  string `json:"bid1Price"` // Лучшая цена покупки (лучший Bid)
-					BidSize   string `json:"bid1Size"`  // Объём лучшей покупки (Bid Size)
-					AskPrice  string `json:"ask1Price"` // Лучшая цена продажи (лучший Ask)
-					AskSize   string `json:"ask1Size"`  // Объём лучшей продажи (Ask Size)
-					LastPrice string `json:"lastPrice"` // Последняя цена сделки
-				} `json:"list"`
-			} `json:"result"`
-		}
-
-		// создаем переменную для ответа
-		var spotTickers SpotTickersResponse
-
-		// декодируем прямо из сетевого потока
-		if err := json.NewDecoder(resp.Body).Decode(&spotTickers); err != nil {
-			slog.Error("Ошибка парсинга JSON spot", "url", url, "error", err)
-		}
-
-		list := spotTickers.Result.List
-		slog.Warn("Ответ", "list", list)
-		//если в полученных данных длина массива больше 1
-		if len(list) > 0 {
-			//сохраним данные
-			exchange.AllSymbols[symbol].Tikers.Lock()
-			exchange.AllSymbols[symbol].Tikers.Spot = shared.SpotTickers{
-				Symbol:    list[0].Symbol,
-				BidPrice:  list[0].BidPrice,
-				BidSize:   list[0].BidSize,
-				AskPrice:  list[0].AskPrice,
-				AskSize:   list[0].AskSize,
-				LastPrice: list[0].LastPrice,
+			//выполним запрос
+			resp, err := http.Get(url)
+			if err != nil {
+				slog.Error("Ошбика Get запроса %s: %w", url, err)
+				return
 			}
-			exchange.AllSymbols[symbol].Tikers.Unlock()
+			defer resp.Body.Close()
 
-			slog.Warn("Получены данные spotTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol+"USDT", "category", "spot")
+			type SpotTickersResponse struct {
+				Result struct {
+					Category string `json:"category"`
+					List     []struct {
+						Symbol    string `json:"symbol"`
+						BidPrice  string `json:"bid1Price"` // Лучшая цена покупки (лучший Bid)
+						BidSize   string `json:"bid1Size"`  // Объём лучшей покупки (Bid Size)
+						AskPrice  string `json:"ask1Price"` // Лучшая цена продажи (лучший Ask)
+						AskSize   string `json:"ask1Size"`  // Объём лучшей продажи (Ask Size)
+						LastPrice string `json:"lastPrice"` // Последняя цена сделки
+					} `json:"list"`
+				} `json:"result"`
+			}
+
+			// создаем переменную для ответа
+			var spotTickers SpotTickersResponse
+
+			// декодируем прямо из сетевого потока
+			if err := json.NewDecoder(resp.Body).Decode(&spotTickers); err != nil {
+				slog.Error("Ошибка парсинга JSON spot", "url", url, "error", err)
+				return
+			}
+
+			list := spotTickers.Result.List
+			// slog.Warn("Ответ", "list", list)
+			//если в полученных данных длина массива больше 1
+			if len(list) > 0 {
+				//сохраним данные
+				exchange.AllSymbols[symbol].Tikers.Lock()
+				exchange.AllSymbols[symbol].Tikers.Spot = shared.SpotTickers{
+					Symbol:    list[0].Symbol,
+					BidPrice:  list[0].BidPrice,
+					BidSize:   list[0].BidSize,
+					AskPrice:  list[0].AskPrice,
+					AskSize:   list[0].AskSize,
+					LastPrice: list[0].LastPrice,
+				}
+				exchange.AllSymbols[symbol].Tikers.Unlock()
+
+				slog.Info("Получены данные spotTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol+"USDT", "category", "spot")
+			}
+
+			//сделаем паузу между запросами
+			time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
 		}
 
-		//сделаем паузу между запросами
-		time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+	}
 
-		//*********** linear **************
+	//*********** linear **************
 
-		slog.Warn("Запрос данных всех linear", "exchangeName", exchange.ExchangeName, "category", "linear")
+	for symbol := range exchange.AllSymbols {
 
-		//сформируем строку запроса options
-		// url = fmt.Sprintf("%s/v5/market/tickers?symbol=%s&category=%s", baseEndPont, symbol+"USDT", "linear")
-		url = fmt.Sprintf("%s/v5/market/tickers?category=%s", baseEndPont, "linear")
+		//получим информацию по символу
+		exchange.AllSymbols[symbol].Info.Lock()
+		symbolInfo := exchange.AllSymbols[symbol].Info.SymbolInfo
+		exchange.AllSymbols[symbol].Info.Unlock()
 
-		//выполним запрос
-		resp, err = http.Get(url)
-		if err != nil {
-			slog.Error("Ошбика Get запроса %s: %w", url, err)
-			return
-		}
-		defer resp.Body.Close()
+		//если данные доступны
+		if symbolInfo.IsPerpetualAvailable {
 
-		type LinearTickersResponse struct {
-			Result struct {
-				Category string `json:"category"`
-				List     []struct {
-					Symbol    string `json:"symbol"`
-					BidPrice  string `json:"bid1Price"` // Лучшая цена покупки (лучший Bid)
-					BidSize   string `json:"bid1Size"`  // Объём лучшей покупки (Bid Size)
-					AskPrice  string `json:"ask1Price"` // Лучшая цена продажи (лучший Ask)
-					AskSize   string `json:"ask1Size"`  // Объём лучшей продажи (Ask Size)
-					LastPrice string `json:"lastPrice"` // Последняя цена сделки
-				} `json:"list"`
-			} `json:"result"`
-		}
+			// slog.Info("Запрос данных всех linear", "exchangeName", exchange.ExchangeName, "category", "linear")
 
-		// создаем переменную для ответа
-		var linearTickers LinearTickersResponse
+			//сформируем строку запроса options
+			// url = fmt.Sprintf("%s/v5/market/tickers?symbol=%s&category=%s", baseEndPont, symbol+"USDT", "linear")
+			url := fmt.Sprintf("%s/v5/market/tickers?category=%s", baseEndPont, "linear")
 
-		// декодируем прямо из сетевого потока
-		if err := json.NewDecoder(resp.Body).Decode(&linearTickers); err != nil {
-			slog.Error("Ошибка парсинга JSON spot", "url", url, "error", err)
-			return
-		}
+			//выполним запрос
+			resp, err := http.Get(url)
+			if err != nil {
+				slog.Error("Ошбика Get запроса %s: %w", url, err)
+				return
+			}
+			defer resp.Body.Close()
 
-		list = linearTickers.Result.List
-		slog.Warn("Ответ", "list", list)
-		//если в полученных данных длина массива больше 1
-		if len(list) > 0 {
+			type LinearTickersResponse struct {
+				Result struct {
+					Category string `json:"category"`
+					List     []struct {
+						Symbol    string `json:"symbol"`
+						BidPrice  string `json:"bid1Price"` // Лучшая цена покупки (лучший Bid)
+						BidSize   string `json:"bid1Size"`  // Объём лучшей покупки (Bid Size)
+						AskPrice  string `json:"ask1Price"` // Лучшая цена продажи (лучший Ask)
+						AskSize   string `json:"ask1Size"`  // Объём лучшей продажи (Ask Size)
+						LastPrice string `json:"lastPrice"` // Последняя цена сделки
+					} `json:"list"`
+				} `json:"result"`
+			}
 
-			//получим список фьючерсов для данной монеты
-			exchange.AllSymbols[symbol].Info.Lock()
-			FuturesContractNameArr := exchange.AllSymbols[symbol].Info.SymbolInfo.FuturesContractNameArr
-			exchange.AllSymbols[symbol].Info.Unlock()
+			// создаем переменную для ответа
+			var linearTickers LinearTickersResponse
 
-			slog.Warn("Список фьючерсов", "FuturesContractNameArr", FuturesContractNameArr)
+			// декодируем прямо из сетевого потока
+			if err := json.NewDecoder(resp.Body).Decode(&linearTickers); err != nil {
+				slog.Error("Ошибка парсинга JSON spot", "url", url, "error", err)
+				return
+			}
 
-			//локальный массив для данных фьючерсов
-			localFuturesTickersArr := []shared.FuturesTickers{}
+			list := linearTickers.Result.List
+			// slog.Warn("Ответ", "list", list)
+			//если в полученных данных длина массива больше 1
+			if len(list) > 0 {
 
-			//для каждого элемента списка
-			for i := range list {
+				//получим список фьючерсов для данной монеты
+				exchange.AllSymbols[symbol].Info.Lock()
+				FuturesContractNameArr := exchange.AllSymbols[symbol].Info.SymbolInfo.FuturesContractNameArr
+				exchange.AllSymbols[symbol].Info.Unlock()
 
-				//если это фьючерс perpetual
-				if list[i].Symbol == symbol+"USDT" {
-					// slog.Warn("Perpetual найден")
+				slog.Info("Список фьючерсов", "exchangeName", exchange.ExchangeName, "symbol", symbol, "FuturesContractNameArr", FuturesContractNameArr)
 
-					//сохраним данные
-					exchange.AllSymbols[symbol].Tikers.Lock()
-					exchange.AllSymbols[symbol].Tikers.Perpetual = shared.PerpetualTickers{
-						Symbol:    list[i].Symbol,
-						BidPrice:  list[i].BidPrice,
-						BidSize:   list[i].BidSize,
-						AskPrice:  list[i].AskPrice,
-						AskSize:   list[i].AskSize,
-						LastPrice: list[i].LastPrice,
+				//локальный массив для данных фьючерсов
+				localFuturesTickersArr := []shared.FuturesTickers{}
+
+				//для каждого элемента списка
+				for i := range list {
+
+					//если это фьючерс perpetual
+					if list[i].Symbol == symbol+"USDT" {
+						// slog.Warn("Perpetual найден")
+
+						//сохраним данные
+						exchange.AllSymbols[symbol].Tikers.Lock()
+						exchange.AllSymbols[symbol].Tikers.Perpetual = shared.PerpetualTickers{
+							Symbol:    list[i].Symbol,
+							BidPrice:  list[i].BidPrice,
+							BidSize:   list[i].BidSize,
+							AskPrice:  list[i].AskPrice,
+							AskSize:   list[i].AskSize,
+							LastPrice: list[i].LastPrice,
+						}
+						exchange.AllSymbols[symbol].Tikers.Unlock()
+
 					}
+
+					if slices.Contains(FuturesContractNameArr, list[i].Symbol) {
+						// slog.Warn("futures найден")
+
+						//создадим локальные данные
+						localTickers := shared.FuturesTickers{
+							Symbol:    list[i].Symbol,
+							BidPrice:  list[i].BidPrice,
+							BidSize:   list[i].BidSize,
+							AskPrice:  list[i].AskPrice,
+							AskSize:   list[i].AskSize,
+							LastPrice: list[i].LastPrice,
+						}
+
+						localFuturesTickersArr = append(localFuturesTickersArr, localTickers)
+					}
+				}
+
+				//если найдены фьючерсы
+				if len(localFuturesTickersArr) > 0 {
+					exchange.AllSymbols[symbol].Tikers.Lock()
+					exchange.AllSymbols[symbol].Tikers.Futures = localFuturesTickersArr
 					exchange.AllSymbols[symbol].Tikers.Unlock()
 
 				}
 
-				if slices.Contains(FuturesContractNameArr, list[i].Symbol) {
-					// slog.Warn("futures найден")
-
-					//создадим локальные данные
-					localTickers := shared.FuturesTickers{
-						Symbol:    list[i].Symbol,
-						BidPrice:  list[i].BidPrice,
-						BidSize:   list[i].BidSize,
-						AskPrice:  list[i].AskPrice,
-						AskSize:   list[i].AskSize,
-						LastPrice: list[i].LastPrice,
-					}
-
-					localFuturesTickersArr = append(localFuturesTickersArr, localTickers)
-				}
+				slog.Info("Получены данные linearTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol, "category", "linear")
 			}
 
-			//если найдены фьючерсы
-			if len(localFuturesTickersArr) > 0 {
+			//сделаем паузу между запросами
+			time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+		}
+	}
+
+	//*********** Options **************
+
+	//для каждого символа
+	for symbol := range exchange.AllSymbols {
+
+		//получим информацию по символу
+		exchange.AllSymbols[symbol].Info.Lock()
+		symbolInfo := exchange.AllSymbols[symbol].Info.SymbolInfo
+		exchange.AllSymbols[symbol].Info.Unlock()
+
+		//если данные доступны
+		if symbolInfo.IsOptionsAvailable {
+
+			//сформируем строку запроса options
+			url := fmt.Sprintf("%s/v5/market/tickers?baseCoin=%s&category=%s", baseEndPont, symbol, "option")
+
+			//выполним запрос
+			resp, err := http.Get(url)
+			if err != nil {
+				slog.Error("Ошбика Get запроса %s: %w", url, err)
+				return
+			}
+			defer resp.Body.Close()
+
+			//структура каждого опциона
+			type OptionItem struct {
+				Symbol                 string `json:"symbol"`
+				Bid1Price              string `json:"bid1Price"`
+				Bid1Size               string `json:"bid1Size"`
+				Bid1Iv                 string `json:"bid1Iv"`
+				Ask1Price              string `json:"ask1Price"`
+				Ask1Size               string `json:"ask1Size"`
+				Ask1Iv                 string `json:"ask1Iv"`
+				LastPrice              string `json:"lastPrice"`
+				HighPrice24h           string `json:"highPrice24h"`
+				LowPrice24h            string `json:"lowPrice24h"`
+				MarkPrice              string `json:"markPrice"`
+				IndexPrice             string `json:"indexPrice"`
+				MarkIv                 string `json:"markIv"`
+				UnderlyingPrice        string `json:"underlyingPrice"`
+				OpenInterest           string `json:"openInterest"`
+				Turnover24h            string `json:"turnover24h"`
+				Volume24h              string `json:"volume24h"`
+				TotalVolume            string `json:"totalVolume"`
+				TotalTurnover          string `json:"totalTurnover"`
+				Delta                  string `json:"delta"`
+				Gamma                  string `json:"gamma"`
+				Vega                   string `json:"vega"`
+				Theta                  string `json:"theta"`
+				PredictedDeliveryPrice string `json:"predictedDeliveryPrice"`
+				Change24h              string `json:"change24h"`
+			}
+
+			//короткая структура для ответа
+			type OptionsResponse struct {
+				Result struct {
+					List []OptionItem `json:"list"`
+				} `json:"result"`
+			}
+
+			// создаем переменную для ответа
+			var optionsTickers OptionsResponse
+
+			// декодируем прямо из сетевого потока
+			if err := json.NewDecoder(resp.Body).Decode(&optionsTickers); err != nil {
+				slog.Error("Ошибка парсинга JSON options", "url", url, "error", err)
+				return
+			}
+
+			list := optionsTickers.Result.List
+			// slog.Warn("Ответ", "list", list)
+
+			// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "rawOptionsData", rawOptionsData)
+
+			//страйк и дата - иначе страйк опциона теряется
+			type StrikeAndData struct {
+				Strike string
+				Data   OptionItem
+			}
+
+			//структура колов и путов отдельно
+			type CallsAndPuts struct {
+				Calls []StrikeAndData
+				Puts  []StrikeAndData
+			}
+
+			//структура для сортировки колов и путов по серии
+			allSeriesMap := make(map[string]CallsAndPuts)
+
+			//для каждого опциона
+			for i := range list {
+
+				//разобъем Symbol на части
+				parts := strings.Split(list[i].Symbol, "-")
+
+				//переменные
+				currSeries := parts[1]
+				strike := parts[2]
+				optionType := parts[3]
+
+				//если серия опциона отсутствует
+				if _, ok := allSeriesMap[currSeries]; !ok {
+					//добавим новую пустую серию
+					allSeriesMap[currSeries] = CallsAndPuts{}
+				}
+
+				// slog.Warn("Тип опциона", "ExchangeName", b.ExchangeName, "symbol", symbol, "parts[3]", parts[3])
+
+				//достанем текущую серию из map
+				currSeriesData := allSeriesMap[currSeries]
+
+				//проверим тип опциона
+				switch optionType {
+				case "C":
+					// slog.Warn("Добавлен Call")
+					//добавим опцион к Calls
+
+					//создадим локальную структуру опциона
+					localData := StrikeAndData{
+						Strike: strike,
+						Data:   list[i],
+					}
+
+					//запишем данные опциона в Calls
+					currSeriesData.Calls = append(currSeriesData.Calls, localData)
+				case "P":
+					// slog.Warn("Добавлен Put")
+
+					//создадим локальную структуру опциона
+					localData := StrikeAndData{
+						Strike: strike,
+						Data:   list[i],
+					}
+
+					//запишем данные опциона в Puts
+					currSeriesData.Puts = append(currSeriesData.Puts, localData)
+				}
+
+				//записываем обновленную серию обратно в map
+				allSeriesMap[currSeries] = currSeriesData
+
+				// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "currSeriesData", currSeriesData)
+
+			}
+
+			// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "allSeriesMap", allSeriesMap)
+
+			//для каждой серии
+			for series := range allSeriesMap {
+
+				//массив трайков
+				var allStrikes []string
+
+				//соберем все страйки их опционов Call
+				for _, call := range allSeriesMap[series].Calls {
+					allStrikes = append(allStrikes, call.Strike)
+				}
+
+				//сортируем страйки по возрастанию
+				slices.SortFunc(allStrikes, func(a, b string) int {
+					valA, _ := strconv.ParseFloat(a, 64)
+					valB, _ := strconv.ParseFloat(b, 64)
+
+					if valA < valB {
+						return -1 // a должно идти перед b
+					}
+					if valA > valB {
+						return 1 // a должно идти после b
+					}
+					return 0 // значения равны
+				})
+
+				// slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "allStrikes", allStrikes)
+
+				//длина массива всех страйков
+				lenAllStrikes := len(allStrikes)
+
+				//инициализируем локальную структуру с длиной данных lenAllStrikes
+				localOptionsLines := shared.OptionsLines{
+					Strikes: make([]string, lenAllStrikes),
+
+					Cmark: make([]string, lenAllStrikes),
+					Pmark: make([]string, lenAllStrikes),
+					Cask:  make([]string, lenAllStrikes),
+					Pask:  make([]string, lenAllStrikes),
+					Cbid:  make([]string, lenAllStrikes),
+					Pbid:  make([]string, lenAllStrikes),
+
+					Cdelta: make([]string, lenAllStrikes),
+					Pdelta: make([]string, lenAllStrikes),
+					Cgamma: make([]string, lenAllStrikes),
+					Pgamma: make([]string, lenAllStrikes),
+					Cvega:  make([]string, lenAllStrikes),
+					Pvega:  make([]string, lenAllStrikes),
+					Ctheta: make([]string, lenAllStrikes),
+					Ptheta: make([]string, lenAllStrikes),
+
+					Coi:   make([]string, lenAllStrikes),
+					Poi:   make([]string, lenAllStrikes),
+					Ctv:   make([]string, lenAllStrikes),
+					Ptv:   make([]string, lenAllStrikes),
+					Cv24h: make([]string, lenAllStrikes),
+					Pv24h: make([]string, lenAllStrikes),
+
+					CaskIv: make([]string, lenAllStrikes),
+					PaskIv: make([]string, lenAllStrikes),
+					CbidIv: make([]string, lenAllStrikes),
+					PbidIv: make([]string, lenAllStrikes),
+					MarkIv: make([]string, lenAllStrikes),
+				}
+
+				//передадим страйки
+				copy(localOptionsLines.Strikes, allStrikes)
+
+				//для каждого опциона call
+				for j := range allSeriesMap[series].Calls {
+
+					//индекс страйка
+					var strikeIndex int
+
+					//для каждого страйка в данных по страйкам
+					for k := range localOptionsLines.Strikes {
+
+						//если страйки совпадают
+						if allSeriesMap[series].Calls[j].Strike == localOptionsLines.Strikes[k] {
+							//запишем индекс страйка
+							strikeIndex = k
+							break
+						}
+					}
+
+					//перепишем данные Call опциона в соответствии с индексом
+					localOptionsLines.Cmark[strikeIndex] = allSeriesMap[series].Calls[j].Data.MarkPrice
+					localOptionsLines.Cask[strikeIndex] = allSeriesMap[series].Calls[j].Data.Ask1Price
+					localOptionsLines.Cbid[strikeIndex] = allSeriesMap[series].Calls[j].Data.Bid1Price
+
+					localOptionsLines.Cdelta[strikeIndex] = allSeriesMap[series].Calls[j].Data.Delta
+					localOptionsLines.Cgamma[strikeIndex] = allSeriesMap[series].Calls[j].Data.Gamma
+					localOptionsLines.Cvega[strikeIndex] = allSeriesMap[series].Calls[j].Data.Vega
+					localOptionsLines.Ctheta[strikeIndex] = allSeriesMap[series].Calls[j].Data.Theta
+
+					localOptionsLines.Coi[strikeIndex] = allSeriesMap[series].Calls[j].Data.OpenInterest
+					localOptionsLines.Ctv[strikeIndex] = allSeriesMap[series].Calls[j].Data.TotalVolume
+					localOptionsLines.Cv24h[strikeIndex] = allSeriesMap[series].Calls[j].Data.Volume24h
+
+					localOptionsLines.CaskIv[strikeIndex] = allSeriesMap[series].Calls[j].Data.Ask1Iv
+					localOptionsLines.CbidIv[strikeIndex] = allSeriesMap[series].Calls[j].Data.Bid1Iv
+
+					//передадим линию MarkIv
+					localOptionsLines.MarkIv[strikeIndex] = allSeriesMap[series].Calls[j].Data.MarkIv
+
+				}
+
+				//для каждого опциона put
+				for j := range allSeriesMap[series].Puts {
+
+					//индекс страйка
+					var strikeIndex int
+
+					//для каждого страйка в данных по страйкам
+					for k := range localOptionsLines.Strikes {
+						//если страйки совпадают
+						if allSeriesMap[series].Puts[j].Strike == localOptionsLines.Strikes[k] {
+							//запишем индекс страйка
+							strikeIndex = k
+							break
+						}
+					}
+
+					//перепишем данные Put опциона в соответствии с индексом
+					localOptionsLines.Pmark[strikeIndex] = allSeriesMap[series].Puts[j].Data.MarkPrice
+					localOptionsLines.Pask[strikeIndex] = allSeriesMap[series].Puts[j].Data.Ask1Price
+					localOptionsLines.Pbid[strikeIndex] = allSeriesMap[series].Puts[j].Data.Bid1Price
+
+					localOptionsLines.Pdelta[strikeIndex] = allSeriesMap[series].Puts[j].Data.Delta
+					localOptionsLines.Pgamma[strikeIndex] = allSeriesMap[series].Puts[j].Data.Gamma
+					localOptionsLines.Pvega[strikeIndex] = allSeriesMap[series].Puts[j].Data.Vega
+					localOptionsLines.Ptheta[strikeIndex] = allSeriesMap[series].Puts[j].Data.Theta
+
+					localOptionsLines.Poi[strikeIndex] = allSeriesMap[series].Puts[j].Data.OpenInterest
+					localOptionsLines.Ptv[strikeIndex] = allSeriesMap[series].Puts[j].Data.TotalVolume
+					localOptionsLines.Pv24h[strikeIndex] = allSeriesMap[series].Puts[j].Data.Volume24h
+
+					localOptionsLines.PaskIv[strikeIndex] = allSeriesMap[series].Puts[j].Data.Ask1Iv
+					localOptionsLines.PbidIv[strikeIndex] = allSeriesMap[series].Puts[j].Data.Bid1Iv
+
+					//MarkIv не пишем
+
+				}
+
+				// slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "localOptionsLines", localOptionsLines)
+
+				//минимум линии
+				var minMarkIvStr string
+
+				//если линия MarkIv не нулевая
+				if len(localOptionsLines.MarkIv) > 0 {
+
+					//первое значение макс float64
+					minMarkIv := math.MaxFloat64
+
+					// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "localOptionsLines.MarkIv", localOptionsLines.MarkIv)
+
+					for j := range localOptionsLines.MarkIv {
+
+						// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "markIvStr", markIvStr)
+
+						// Конвертируем строку в число (база 10, размер int)
+						num, err := strconv.ParseFloat(localOptionsLines.MarkIv[j], 64)
+						if err != nil {
+							slog.Error("Ошибка конвертации строки '%s' в число: %w", localOptionsLines.MarkIv[j], err)
+							return
+						}
+
+						// Если текущее число меньше сохраненного минимума, обновляем минимум
+						if num < minMarkIv {
+							//сохраним числовое значение
+							minMarkIv = num
+							//сохраним строковое значение
+							minMarkIvStr = localOptionsLines.MarkIv[j]
+						}
+					}
+				}
+
+				//заполним данные для текущей серии опционов
+				localOptionsData := shared.OptionsTickers{
+					Symbol:       symbol,
+					Series:       series,
+					MinMarkIv:    minMarkIvStr,
+					OptionsLines: localOptionsLines,
+				}
+
+				//добавим полученные данные по серии в итоговый массив
 				exchange.AllSymbols[symbol].Tikers.Lock()
-				exchange.AllSymbols[symbol].Tikers.Futures = localFuturesTickersArr
+				exchange.AllSymbols[symbol].Tikers.Options = append(exchange.AllSymbols[symbol].Tikers.Options, localOptionsData)
 				exchange.AllSymbols[symbol].Tikers.Unlock()
 
 			}
+			exchange.AllSymbols[symbol].Tikers.Lock()
+			//сортируем итоговый результат по полю series по возрастанию времени доставки
+			slices.SortFunc(exchange.AllSymbols[symbol].Tikers.Options, func(a, b shared.OptionsTickers) int {
+				timeA, errA := convert.SeriesToDeliveryTimeMs(a.Series)
+				timeB, errB := convert.SeriesToDeliveryTimeMs(b.Series)
 
-			slog.Warn("Получены данные linearTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol, "category", "linear")
+				if errA != nil {
+					return -1
+				}
+				if errB != nil {
+					return 1
+				}
+
+				if timeA < timeB {
+					return -1
+				}
+				if timeA > timeB {
+					return 1
+				}
+
+				return 0
+
+			})
+
+			OptionsLen := len(exchange.AllSymbols[symbol].Tikers.Options)
+			// slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].Tikers.Options)
+
+			exchange.AllSymbols[symbol].Tikers.Unlock()
+
+			slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "OptionsLen", OptionsLen)
 		}
-
-		//сделаем паузу между запросами
-		time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-
-		os.Exit(1)
-
-		//*********** Options **************
-
-		// //сформируем строку запроса options
-		// url := fmt.Sprintf("%s/v5/market/tickers?baseCoin=%s&category=%s", baseEndPont, symbol, "option")
-
-		// //выполним запрос
-		// resp, err := http.Get(url)
-		// if err != nil {
-		// 	slog.Error("Ошбика Get запроса %s: %w", url, err)
-		// }
-		// defer resp.Body.Close()
-
-		// //сформируем строку запроса options
-		// url := fmt.Sprintf("%s/v5/market/tickers?baseCoin=%s&category=%s", baseEndPont, symbol, "option")
-
-		// //выполним запрос
-		// resp, err := http.Get(url)
-		// if err != nil {
-		// 	slog.Error("Ошбика Get запроса %s: %w", url, err)
-		// }
-		// defer resp.Body.Close()
-
-		// //структура каждого опциона
-		// type OptionItem struct {
-		// 	Symbol                 string `json:"symbol"`
-		// 	Bid1Price              string `json:"bid1Price"`
-		// 	Bid1Size               string `json:"bid1Size"`
-		// 	Bid1Iv                 string `json:"bid1Iv"`
-		// 	Ask1Price              string `json:"ask1Price"`
-		// 	Ask1Size               string `json:"ask1Size"`
-		// 	Ask1Iv                 string `json:"ask1Iv"`
-		// 	LastPrice              string `json:"lastPrice"`
-		// 	HighPrice24h           string `json:"highPrice24h"`
-		// 	LowPrice24h            string `json:"lowPrice24h"`
-		// 	MarkPrice              string `json:"markPrice"`
-		// 	IndexPrice             string `json:"indexPrice"`
-		// 	MarkIv                 string `json:"markIv"`
-		// 	UnderlyingPrice        string `json:"underlyingPrice"`
-		// 	OpenInterest           string `json:"openInterest"`
-		// 	Turnover24h            string `json:"turnover24h"`
-		// 	Volume24h              string `json:"volume24h"`
-		// 	TotalVolume            string `json:"totalVolume"`
-		// 	TotalTurnover          string `json:"totalTurnover"`
-		// 	Delta                  string `json:"delta"`
-		// 	Gamma                  string `json:"gamma"`
-		// 	Vega                   string `json:"vega"`
-		// 	Theta                  string `json:"theta"`
-		// 	PredictedDeliveryPrice string `json:"predictedDeliveryPrice"`
-		// 	Change24h              string `json:"change24h"`
-		// }
-
-		// //короткая структура для ответа
-		// type OptionsResponse struct {
-		// 	Result struct {
-		// 		List []OptionItem `json:"list"`
-		// 	} `json:"result"`
-		// }
-
-		// //вычитываем все сырые байты из тела ответа
-		// bodyBytes, err := io.ReadAll(respOptions.Body)
-		// if err != nil {
-		// 	return []shared.OptionsData{}, fmt.Errorf("Ошибка чтения тела ответа %s: %w", url, err)
-		// }
-
-		// //экземпляр структуры ответа
-		// var rawOptionsData OptionsResponse
-
-		// //распаковываем JSON-байты в созданный объект Go (передаем по указателю &)
-		// err = json.Unmarshal(bodyBytes, &rawOptionsData)
-		// if err != nil {
-		// 	return []shared.OptionsData{}, fmt.Errorf("Ошибка парсинга JSON опционов: %w", err)
-		// }
-
-		// // slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "rawOptionsData", rawOptionsData)
-
-		// //страйк и дата - иначе страйк опциона теряется
-		// type StrikeAndData struct {
-		// 	Strike string
-		// 	Data   OptionItem
-		// }
-
-		// //структура колов и путов отдельно
-		// type CallsAndPuts struct {
-		// 	Calls []StrikeAndData
-		// 	Puts  []StrikeAndData
-		// }
-
-		// //структура для сортировки колов и путов по серии
-		// allSeriesMap := make(map[string]CallsAndPuts)
-
-		// //для каждого опциона
-		// for i := range rawOptionsData.Result.List {
-
-		// 	//разобъем Symbol на части
-		// 	parts := strings.Split(rawOptionsData.Result.List[i].Symbol, "-")
-
-		// 	//переменные
-		// 	currSeries := parts[1]
-		// 	strike := parts[2]
-		// 	optionType := parts[3]
-
-		// 	//если серия опциона отсутствует
-		// 	if _, ok := allSeriesMap[currSeries]; !ok {
-		// 		//добавим новую пустую серию
-		// 		allSeriesMap[currSeries] = CallsAndPuts{}
-		// 	}
-
-		// 	// slog.Warn("Тип опциона", "ExchangeName", b.ExchangeName, "symbol", symbol, "parts[3]", parts[3])
-
-		// 	//достанем текущую серию из map
-		// 	currSeriesData := allSeriesMap[currSeries]
-
-		// 	//проверим тип опциона
-		// 	switch optionType {
-		// 	case "C":
-		// 		// slog.Warn("Добавлен Call")
-		// 		//добавим опцион к Calls
-
-		// 		//создадим локальную структуру опциона
-		// 		localData := StrikeAndData{
-		// 			Strike: strike,
-		// 			Data:   rawOptionsData.Result.List[i],
-		// 		}
-
-		// 		//запишем данные опциона в Calls
-		// 		currSeriesData.Calls = append(currSeriesData.Calls, localData)
-		// 	case "P":
-		// 		// slog.Warn("Добавлен Put")
-
-		// 		//создадим локальную структуру опциона
-		// 		localData := StrikeAndData{
-		// 			Strike: strike,
-		// 			Data:   rawOptionsData.Result.List[i],
-		// 		}
-
-		// 		////запишем данные опциона в Puts
-		// 		currSeriesData.Puts = append(currSeriesData.Puts, localData)
-		// 	}
-
-		// 	//записываем обновленную серию обратно в map
-		// 	allSeriesMap[currSeries] = currSeriesData
-
-		// 	// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "currSeriesData", currSeriesData)
-
-		// }
-
-		// // slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "allSeriesMap", allSeriesMap)
-
-		// //для каждой серии
-		// for series, seriesData := range allSeriesMap {
-
-		// 	//массив трайков
-		// 	var allStrikes []string
-
-		// 	//соберем все страйки их опционов Call
-		// 	for _, call := range seriesData.Calls {
-		// 		allStrikes = append(allStrikes, call.Strike)
-		// 	}
-
-		// 	//сортируем страйки по возрастанию
-		// 	slices.SortFunc(allStrikes, func(a, b string) int {
-		// 		valA, _ := strconv.ParseFloat(a, 64)
-		// 		valB, _ := strconv.ParseFloat(b, 64)
-
-		// 		if valA < valB {
-		// 			return -1 // a должно идти перед b
-		// 		}
-		// 		if valA > valB {
-		// 			return 1 // a должно идти после b
-		// 		}
-		// 		return 0 // значения равны
-		// 	})
-
-		// 	// slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "allStrikes", allStrikes)
-
-		// 	//длина массива всех страйков
-		// 	lenAllStrikes := len(allStrikes)
-
-		// 	//инициализируем локальную структуру с длиной данных lenAllStrikes
-		// 	localOptionsLines := shared.OptionsLines{
-		// 		Strikes: make([]string, lenAllStrikes),
-
-		// 		Cmark: make([]string, lenAllStrikes),
-		// 		Pmark: make([]string, lenAllStrikes),
-		// 		Cask:  make([]string, lenAllStrikes),
-		// 		Pask:  make([]string, lenAllStrikes),
-		// 		Cbid:  make([]string, lenAllStrikes),
-		// 		Pbid:  make([]string, lenAllStrikes),
-
-		// 		Cdelta: make([]string, lenAllStrikes),
-		// 		Pdelta: make([]string, lenAllStrikes),
-		// 		Cgamma: make([]string, lenAllStrikes),
-		// 		Pgamma: make([]string, lenAllStrikes),
-		// 		Cvega:  make([]string, lenAllStrikes),
-		// 		Pvega:  make([]string, lenAllStrikes),
-		// 		Ctheta: make([]string, lenAllStrikes),
-		// 		Ptheta: make([]string, lenAllStrikes),
-
-		// 		Coi:   make([]string, lenAllStrikes),
-		// 		Poi:   make([]string, lenAllStrikes),
-		// 		Ctv:   make([]string, lenAllStrikes),
-		// 		Ptv:   make([]string, lenAllStrikes),
-		// 		Cv24h: make([]string, lenAllStrikes),
-		// 		Pv24h: make([]string, lenAllStrikes),
-
-		// 		CaskIv: make([]string, lenAllStrikes),
-		// 		PaskIv: make([]string, lenAllStrikes),
-		// 		CbidIv: make([]string, lenAllStrikes),
-		// 		PbidIv: make([]string, lenAllStrikes),
-		// 		MarkIv: make([]string, lenAllStrikes),
-		// 	}
-
-		// 	//передадим страйки
-		// 	copy(localOptionsLines.Strikes, allStrikes)
-
-		// 	//для каждого опциона call
-		// 	for _, call := range seriesData.Calls {
-
-		// 		//индекс страйка
-		// 		var strikeIndex int
-
-		// 		//для каждого страйка в данных по страйкам
-		// 		for i, strike := range localOptionsLines.Strikes {
-		// 			//если страйки совпадают
-		// 			if call.Strike == strike {
-		// 				//запишем индекс страйка
-		// 				strikeIndex = i
-		// 				break
-		// 			}
-		// 		}
-
-		// 		//перепишем данные Call опциона в соответствии с индексом
-		// 		localOptionsLines.Cmark[strikeIndex] = call.Data.MarkPrice
-		// 		localOptionsLines.Cask[strikeIndex] = call.Data.Ask1Price
-		// 		localOptionsLines.Cbid[strikeIndex] = call.Data.Bid1Price
-
-		// 		localOptionsLines.Cdelta[strikeIndex] = call.Data.Delta
-		// 		localOptionsLines.Cgamma[strikeIndex] = call.Data.Gamma
-		// 		localOptionsLines.Cvega[strikeIndex] = call.Data.Vega
-		// 		localOptionsLines.Ctheta[strikeIndex] = call.Data.Theta
-
-		// 		localOptionsLines.Coi[strikeIndex] = call.Data.OpenInterest
-		// 		localOptionsLines.Ctv[strikeIndex] = call.Data.TotalVolume
-		// 		localOptionsLines.Cv24h[strikeIndex] = call.Data.Volume24h
-
-		// 		localOptionsLines.CaskIv[strikeIndex] = call.Data.Ask1Iv
-		// 		localOptionsLines.CbidIv[strikeIndex] = call.Data.Bid1Iv
-
-		// 		//передадим линию MarkIv
-		// 		localOptionsLines.MarkIv[strikeIndex] = call.Data.MarkIv
-
-		// 	}
-
-		// 	//для каждого опциона put
-		// 	for _, put := range seriesData.Puts {
-
-		// 		//индекс страйка
-		// 		var strikeIndex int
-
-		// 		//для каждого страйка в данных по страйкам
-		// 		for i, strike := range localOptionsLines.Strikes {
-		// 			//если страйки совпадают
-		// 			if put.Strike == strike {
-		// 				//запишем индекс страйка
-		// 				strikeIndex = i
-		// 				break
-		// 			}
-		// 		}
-
-		// 		//перепишем данные Put опциона в соответствии с индексом
-		// 		localOptionsLines.Pmark[strikeIndex] = put.Data.MarkPrice
-		// 		localOptionsLines.Pask[strikeIndex] = put.Data.Ask1Price
-		// 		localOptionsLines.Pbid[strikeIndex] = put.Data.Bid1Price
-
-		// 		localOptionsLines.Pdelta[strikeIndex] = put.Data.Delta
-		// 		localOptionsLines.Pgamma[strikeIndex] = put.Data.Gamma
-		// 		localOptionsLines.Pvega[strikeIndex] = put.Data.Vega
-		// 		localOptionsLines.Ptheta[strikeIndex] = put.Data.Theta
-
-		// 		localOptionsLines.Poi[strikeIndex] = put.Data.OpenInterest
-		// 		localOptionsLines.Ptv[strikeIndex] = put.Data.TotalVolume
-		// 		localOptionsLines.Pv24h[strikeIndex] = put.Data.Volume24h
-
-		// 		localOptionsLines.PaskIv[strikeIndex] = put.Data.Ask1Iv
-		// 		localOptionsLines.PbidIv[strikeIndex] = put.Data.Bid1Iv
-
-		// 	}
-
-		// 	// slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "localOptionsLines", localOptionsLines)
-
-		// 	//минимум линии
-		// 	var minMarkIvStr string
-
-		// 	//если линия MarkIv не нулевая
-		// 	if len(localOptionsLines.MarkIv) > 0 {
-
-		// 		//первое значение макс float64
-		// 		minMarkIv := math.MaxFloat64
-
-		// 		// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "localOptionsLines.MarkIv", localOptionsLines.MarkIv)
-
-		// 		for _, markIvStr := range localOptionsLines.MarkIv {
-
-		// 			// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "markIvStr", markIvStr)
-
-		// 			// Конвертируем строку в число (база 10, размер int)
-		// 			num, err := strconv.ParseFloat(markIvStr, 64)
-		// 			if err != nil {
-		// 				// Если в массиве попалась не строка-число (например "abc"), возвращаем ошибку
-		// 				return []shared.OptionsData{}, fmt.Errorf("Ошибка конвертации строки '%s' в число: %w", markIvStr, err)
-		// 			}
-
-		// 			// Если текущее число меньше сохраненного минимума, обновляем минимум
-		// 			if num < minMarkIv {
-		// 				//сохраним числовое значение
-		// 				minMarkIv = num
-		// 				//сохраним строковое значение
-		// 				minMarkIvStr = markIvStr
-		// 			}
-		// 		}
-		// 	}
-
-		// 	//заполним данные для текущей серии опционов
-		// 	localOptionsData := shared.OptionsData{
-		// 		Symbol:       symbol,
-		// 		Series:       series,
-		// 		MinMarkIv:    minMarkIvStr,
-		// 		OptionsLines: localOptionsLines,
-		// 	}
-
-		// 	//добавим полученные данные по серии в итоговый массив
-		// 	result = append(result, localOptionsData)
-		// }
-
-		// //сортируем итоговый результат по полю series по возрастанию времени доставки
-		// slices.SortFunc(result, func(a, b shared.OptionsData) int {
-		// 	timeA, errA := convert.SeriesToDeliveryTimeMs(a.Series)
-		// 	timeB, errB := convert.SeriesToDeliveryTimeMs(b.Series)
-
-		// 	if errA != nil {
-		// 		return -1
-		// 	}
-		// 	if errB != nil {
-		// 		return 1
-		// 	}
-
-		// 	if timeA < timeB {
-		// 		return -1
-		// 	}
-		// 	if timeA > timeB {
-		// 		return 1
-		// 	}
-
-		// 	return 0
-		// })
-
-		// slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "len(result)", len(result))
-
 	}
 }
 
