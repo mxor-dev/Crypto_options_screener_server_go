@@ -204,7 +204,7 @@ func GetDataSequentalTimer(ctx context.Context, exchange *shared.Exchange) {
 			// на каждой 5 секунде
 			if seconds%5 == 0 {
 				//последовательно получим данные
-				exchange.Client.GetAllTickersSequental(exchange)
+				exchange.Client.GetTickersDataSequental(exchange)
 			}
 
 			// на каждой 15 минуте и 10 секунде

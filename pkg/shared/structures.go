@@ -31,7 +31,7 @@ type SymbolData struct {
 
 	Info InfoMu
 
-	Tikers TikersMu
+	TikersData TikersDataMu
 }
 
 type InfoMu struct {
@@ -56,33 +56,32 @@ func (i *InfoMu) GetInfo() SymbolInfo {
 }
 
 type SymbolInfo struct {
-	ExchangeName string
-	Symbol       string
+	ExchangeName string `json:"exchange_name"`
+	Symbol       string `json:"symbol"`
 
-	SpotContractName   string
-	SpotMinOrderQty    string
-	SpotTickSize       string
-	SpotPricePrecision string
+	SpotContractName   string `json:"spot_contract_name"`
+	SpotMinOrderQty    string `json:"spot_min_order_qty"`
+	SpotTickSize       string `json:"spot_tick_size"`
+	SpotPricePrecision string `json:"spot_price_precision"`
 
-	PerpetualContractName   string
-	PerpetualMinOrderQty    string
-	PerpetualTickSize       string
-	PerpetualPricePrecision string
+	PerpetualContractName   string `json:"perpetual_contract_name"`
+	PerpetualMinOrderQty    string `json:"perpetual_min_order_qty"`
+	PerpetualTickSize       string `json:"perpetual_tick_size"`
+	PerpetualPricePrecision string `json:"perpetual_price_precision"`
 
-	FuturesContractNameArr []string
-	FuturesMinOrderQty     string
-	FuturesTickSize        string
-	FuturesPricePrecision  string
+	FuturesContractNameArr []string `json:"futures_contract_name_arr"`
+	FuturesMinOrderQty     string   `json:"futures_min_order_qty"`
+	FuturesTickSize        string   `json:"futures_tick_size"`
+	FuturesPricePrecision  string   `json:"futures_price_precision"`
 
-	// OptionContractNameArr []string
-	OptionsMinOrderQty    string
-	OptionsTickSize       string
-	OptionsPricePrecision string
+	OptionsMinOrderQty    string `json:"options_min_order_qty"`
+	OptionsTickSize       string `json:"options_tick_size"`
+	OptionsPricePrecision string `json:"options_price_precision"`
 
-	IsSpotAvailable      bool
-	IsPerpetualAvailable bool
-	IsFuturesAvailable   bool
-	IsOptionsAvailable   bool
+	IsSpotAvailable      bool `json:"is_spot_available"`
+	IsPerpetualAvailable bool `json:"is_perpetual_available"`
+	IsFuturesAvailable   bool `json:"is_futures_available"`
+	IsOptionsAvailable   bool `json:"is_options_available"`
 }
 
 type KlineDataMapMu struct {
@@ -293,79 +292,81 @@ type FetchIntervals struct {
 // 	TimeMs          string
 // }
 
-type TikersMu struct {
-	Spot      SpotTickers
-	Perpetual PerpetualTickers
-	Futures   []FuturesTickers
-	Options   []OptionsTickers
+type TikersDataMu struct {
+	Spot      TickersDataSpot
+	Perpetual TickersDataPerpetual
+	Futures   []TickersDataFutures
+	Options   []TickersDataOptions
 	sync.Mutex
 }
 
-type SpotTickers struct {
-	Symbol    string
-	BidPrice  string
-	BidSize   string
-	AskPrice  string
-	AskSize   string
-	LastPrice string
+type TickersDataSpot struct {
+	Symbol   string `json:"symbol"`
+	BidPrice string `json:"bid_price"`
+	BidSize  string `json:"bid_size"`
+	AskPrice string `json:"ask_price"`
+	AskSize  string `json:"ask_size"`
 }
 
-type PerpetualTickers struct {
-	Symbol    string
-	BidPrice  string
-	BidSize   string
-	AskPrice  string
-	AskSize   string
-	LastPrice string
+type TickersDataPerpetual struct {
+	Symbol   string `json:"symbol"`
+	BidPrice string `json:"bid_price"`
+	BidSize  string `json:"bid_size"`
+	AskPrice string `json:"ask_price"`
+	AskSize  string `json:"ask_size"`
 }
 
-type FuturesTickers struct {
-	Symbol    string
-	BidPrice  string
-	BidSize   string
-	AskPrice  string
-	AskSize   string
-	LastPrice string
+type TickersDataFutures struct {
+	Symbol   string `json:"symbol"`
+	BidPrice string `json:"bid_price"`
+	BidSize  string `json:"bid_size"`
+	AskPrice string `json:"ask_price"`
+	AskSize  string `json:"ask_size"`
 }
 
-type OptionsTickers struct {
-	Symbol       string
-	Series       string
-	MinMarkIv    string
-	OptionsLines OptionsLines
+type TickersDataOptions struct {
+	Symbol       string       `json:"symbol"`
+	Series       string       `json:"series"`
+	ExpiryTime   string       `json:"expiry_time"`
+	MinMarkIv    string       `json:"min_mark_iv"`
+	OptionsLines OptionsLines `json:"options_lines"`
 }
 
 type OptionsLines struct {
-	Strikes []string
+	Strikes []string `json:"strikes"`
 
-	Cmark []string
-	Pmark []string
-	Cask  []string
-	Pask  []string
-	Cbid  []string
-	Pbid  []string
+	Cmark []string `json:"c_mark"`
+	Pmark []string `json:"p_mark"`
+	Cask  []string `json:"c_ask"`
+	Pask  []string `json:"p_ask"`
+	Cbid  []string `json:"c_bid"`
+	Pbid  []string `json:"p_bid"`
 
-	Cdelta []string
-	Pdelta []string
-	Cgamma []string
-	Pgamma []string
-	Cvega  []string
-	Pvega  []string
-	Ctheta []string
-	Ptheta []string
+	Cdelta []string `json:"c_delta"`
+	Pdelta []string `json:"p_delta"`
+	Cgamma []string `json:"c_gamma"`
+	Pgamma []string `json:"p_gamma"`
+	Cvega  []string `json:"c_vega"`
+	Pvega  []string `json:"p_vega"`
+	Ctheta []string `json:"c_theta"`
+	Ptheta []string `json:"p_theta"`
 
-	Coi   []string
-	Poi   []string
-	Ctv   []string
-	Ptv   []string
-	Cv24h []string
-	Pv24h []string
+	Coi   []string `json:"c_oi"`
+	Poi   []string `json:"p_oi"`
+	Ctv   []string `json:"c_tv"`
+	Ptv   []string `json:"p_tv"`
+	Cv24h []string `json:"c_v24h"`
+	Pv24h []string `json:"p_v24h"`
 
-	CaskIv []string
-	PaskIv []string
-	CbidIv []string
-	PbidIv []string
-	MarkIv []string
+	CaskIv []string `json:"c_ask_iv"`
+	PaskIv []string `json:"p_ask_iv"`
+	CbidIv []string `json:"c_bid_iv"`
+	PbidIv []string `json:"p_bid_iv"`
+	MarkIv []string `json:"mark_iv"`
+
+	Cgex   []string `json:"c_gex"`
+	Pgex   []string `json:"p_gex"`
+	Netgex []string `json:"net_gex"`
 }
 
 type LastPriceResponse struct {

@@ -173,7 +173,7 @@ func main() {
 			symbolData := allExchanges[exchangeName].AllSymbols[symbolName]
 
 			// Инициализируем пустую структуру для тикеров
-			symbolData.Tikers = shared.TikersMu{}
+			symbolData.TikersData = shared.TikersDataMu{}
 		}
 
 		// Инициализируем мапу клайнов (Мьютексы на старте лочить НЕ НУЖНО)
@@ -284,7 +284,7 @@ func main() {
 
 		//локальный тип для ExchangeInfo - в него может быть придется положить еще что то
 		type LocalExchangeInfo struct {
-			AllSymbolsInfo map[string]shared.SymbolInfo
+			AllSymbolsInfo map[string]shared.SymbolInfo `json:"all_symbols_info"`
 		}
 
 		//инициализируем ответ в виде хеш таблицы
@@ -364,7 +364,7 @@ func main() {
 			slog.Error("Ошибка в запросе: такого символа не существует", "url", "/api/kline_data", "req", req)
 
 			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой символа не существует"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой символ не существует"})
 			return
 		}
 
@@ -533,6 +533,205 @@ func main() {
 		})
 
 		slog.Warn("Отправлена последняя свеча", "url", "/api/last_candle", "req", req, "lastCandle", lastCandle)
+
+	})
+	//текущая информация по тикерам spot, perpetual. futures. options
+	r.POST("/api/tickers_data", func(c *gin.Context) {
+		type TickersRequest struct {
+			ExchangeName string   `json:"exchange_name" binding:"required"`
+			Symbol       string   `json:"symbol" binding:"required"`
+			LinesToFetch []string `json:"lines_to_fetch"`
+		}
+
+		var req TickersRequest
+
+		// парсим данные
+		if err := c.ShouldBindJSON(&req); err != nil {
+
+			slog.Error("Ошибка в запросе: неверный формат данных", "url", "/api/tickers_data", "req", req)
+
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: неверный формат данных"})
+			return
+		}
+
+		slog.Debug("Получен запрос POST", "url", "/api/tickers_data", "req", req)
+
+		//проверим есть ли такая биржа
+		exchange, ok := allExchanges[req.ExchangeName]
+		if !ok {
+			slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/tickers_data", "req", req)
+
+			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой биржи не существует"})
+			return
+		}
+		//проверим есть ли такой символ
+		_, ok = exchange.AllSymbols[req.Symbol]
+		if !ok {
+			slog.Error("Ошибка в запросе: такого символа не существует", "url", "/api/tickers_data", "req", req)
+
+			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой символ не существует"})
+			return
+		}
+
+		type TickersResponse struct {
+			Spot      shared.TickersDataSpot      `json:"spot"`
+			Perpetual shared.TickersDataPerpetual `json:"perpetual"`
+			Futures   []shared.TickersDataFutures `json:"futures"`
+			Options   []shared.TickersDataOptions `json:"options"`
+		}
+
+		//получим данные тикеров
+		allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Lock()
+		spot := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Spot
+		perpetual := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Perpetual
+		futures := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Futures
+		options := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Options
+		allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Unlock()
+
+		newOptionsArr := []shared.TickersDataOptions{}
+
+		//для каждого опциона
+		for i := range options {
+
+			//доступные данные по опционным линиям
+			availableOptionsLines := options[i].OptionsLines
+
+			//тукущий набор
+			newOptionsLines := shared.OptionsLines{
+				Strikes: availableOptionsLines.Strikes,
+
+				Cmark: []string{},
+				Pmark: []string{},
+				Cask:  []string{},
+				Pask:  []string{},
+				Cbid:  []string{},
+				Pbid:  []string{},
+
+				Cdelta: []string{},
+				Pdelta: []string{},
+				Cgamma: []string{},
+				Pgamma: []string{},
+				Cvega:  []string{},
+				Pvega:  []string{},
+				Ctheta: []string{},
+				Ptheta: []string{},
+
+				Coi:   []string{},
+				Poi:   []string{},
+				Ctv:   []string{},
+				Ptv:   []string{},
+				Cv24h: []string{},
+				Pv24h: []string{},
+
+				CaskIv: []string{},
+				PaskIv: []string{},
+				CbidIv: []string{},
+				PbidIv: []string{},
+				MarkIv: []string{},
+
+				Cgex:   []string{},
+				Pgex:   []string{},
+				Netgex: []string{},
+			}
+
+			//для каждой линии
+			for j := range req.LinesToFetch {
+
+				switch req.LinesToFetch[j] {
+				case "c_mark":
+					newOptionsLines.Cmark = availableOptionsLines.Cmark
+				case "p_mark":
+					newOptionsLines.Pmark = availableOptionsLines.Pmark
+				case "c_ask":
+					newOptionsLines.Cask = availableOptionsLines.Cask
+				case "p_ask":
+					newOptionsLines.Pask = availableOptionsLines.Pask
+				case "c_bid":
+					newOptionsLines.Cbid = availableOptionsLines.Cbid
+				case "p_bid":
+					newOptionsLines.Pbid = availableOptionsLines.Pbid
+
+				case "c_delta":
+					newOptionsLines.Cdelta = availableOptionsLines.Cdelta
+				case "p_delta":
+					newOptionsLines.Pdelta = availableOptionsLines.Pdelta
+				case "c_gamma":
+					newOptionsLines.Cgamma = availableOptionsLines.Cgamma
+				case "p_gamma":
+					newOptionsLines.Pgamma = availableOptionsLines.Pgamma
+				case "c_vega":
+					newOptionsLines.Cvega = availableOptionsLines.Cvega
+				case "p_vega":
+					newOptionsLines.Pvega = availableOptionsLines.Pvega
+				case "c_theta":
+					newOptionsLines.Ctheta = availableOptionsLines.Ctheta
+				case "p_theta":
+					newOptionsLines.Ptheta = availableOptionsLines.Ptheta
+
+				case "c_oi":
+					newOptionsLines.Coi = availableOptionsLines.Coi
+				case "p_oi":
+					newOptionsLines.Poi = availableOptionsLines.Poi
+				case "c_tv":
+					newOptionsLines.Ctv = availableOptionsLines.Ctv
+				case "p_tv":
+					newOptionsLines.Ptv = availableOptionsLines.Ptv
+				case "c_v24h":
+					newOptionsLines.Cv24h = availableOptionsLines.Cv24h
+				case "p_v24h":
+					newOptionsLines.Pv24h = availableOptionsLines.Pv24h
+
+				case "c_ask_iv":
+					newOptionsLines.CaskIv = availableOptionsLines.CaskIv
+				case "p_ask_iv":
+					newOptionsLines.PaskIv = availableOptionsLines.PaskIv
+				case "c_bid_iv":
+					newOptionsLines.CbidIv = availableOptionsLines.CbidIv
+				case "p_bid_iv":
+					newOptionsLines.PbidIv = availableOptionsLines.PbidIv
+				case "mark_iv":
+					newOptionsLines.MarkIv = availableOptionsLines.MarkIv
+
+				case "c_gex":
+					newOptionsLines.Cgex = availableOptionsLines.Cgex
+				case "p_gex":
+					newOptionsLines.Pgex = availableOptionsLines.Pgex
+				case "net_gex":
+					newOptionsLines.Netgex = availableOptionsLines.Netgex
+				}
+			}
+
+			//сформируем данные опционов с неообходимыми линиями
+			new_options := shared.TickersDataOptions{
+				Symbol:       options[i].Symbol,
+				Series:       options[i].Series,
+				ExpiryTime:   options[i].ExpiryTime,
+				MinMarkIv:    options[i].MinMarkIv,
+				OptionsLines: newOptionsLines,
+			}
+
+			//добавим данные опционов в общий массив
+			newOptionsArr = append(newOptionsArr, new_options)
+		}
+
+		tickersResponse := TickersResponse{
+			Spot:      spot,
+			Perpetual: perpetual,
+			Futures:   futures,
+			Options:   newOptionsArr,
+		}
+
+		//дадим ответ
+		c.JSON(http.StatusOK, gin.H{
+			"status":        "success",
+			"exchange_name": req.ExchangeName,
+			"symbol":        req.Symbol,
+			"tickers_data":  tickersResponse,
+		})
+
+		slog.Warn("Отправлены tickers_data", "url", "/api/last_candle", "req", req, "tickers_data", tickersResponse)
 
 	})
 

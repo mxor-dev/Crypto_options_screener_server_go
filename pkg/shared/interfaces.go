@@ -15,7 +15,7 @@ type Client interface {
 	GetSymbolInfo(symbol string, RestDataGetInterval time.Duration) (SymbolInfo, error)           //получает данные по симвоолу
 	GetKline(contract string, category string, interval string, limit string) ([][]string, error) // получает данные свечей по perpetual или споту
 
-	GetAllTickersSequental(exchange *Exchange) //получает данные тикеров для всех категорий для текущего символа
+	GetTickersDataSequental(exchange *Exchange) //получает данные тикеров для всех категорий для текущего символа
 
 	WsPingTimer(ctx context.Context, exchange *Exchange, stopChan chan struct{}, wsKey string) // функция проверки пинга разная в зависимости от биржи
 	WsDecodeMessage(exchange *Exchange, wsKey string, conn *websocket.Conn, message []byte)

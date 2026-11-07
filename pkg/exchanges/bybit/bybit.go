@@ -445,7 +445,7 @@ func (b *BybitClient) GetKline(contract string, category string, interval string
 }
 
 // получает данные по опционам
-func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
+func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 	// var spotTikers shared.SpotTickers
 	// var perpetualTikers shared.PerpetualTickers
@@ -482,12 +482,11 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 				Result struct {
 					Category string `json:"category"`
 					List     []struct {
-						Symbol    string `json:"symbol"`
-						BidPrice  string `json:"bid1Price"` // Лучшая цена покупки (лучший Bid)
-						BidSize   string `json:"bid1Size"`  // Объём лучшей покупки (Bid Size)
-						AskPrice  string `json:"ask1Price"` // Лучшая цена продажи (лучший Ask)
-						AskSize   string `json:"ask1Size"`  // Объём лучшей продажи (Ask Size)
-						LastPrice string `json:"lastPrice"` // Последняя цена сделки
+						Symbol   string `json:"symbol"`
+						BidPrice string `json:"bid1Price"` // Лучшая цена покупки (лучший Bid)
+						BidSize  string `json:"bid1Size"`  // Объём лучшей покупки (Bid Size)
+						AskPrice string `json:"ask1Price"` // Лучшая цена продажи (лучший Ask)
+						AskSize  string `json:"ask1Size"`  // Объём лучшей продажи (Ask Size)
 					} `json:"list"`
 				} `json:"result"`
 			}
@@ -506,16 +505,15 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 			//если в полученных данных длина массива больше 1
 			if len(list) > 0 {
 				//сохраним данные
-				exchange.AllSymbols[symbol].Tikers.Lock()
-				exchange.AllSymbols[symbol].Tikers.Spot = shared.SpotTickers{
-					Symbol:    list[0].Symbol,
-					BidPrice:  list[0].BidPrice,
-					BidSize:   list[0].BidSize,
-					AskPrice:  list[0].AskPrice,
-					AskSize:   list[0].AskSize,
-					LastPrice: list[0].LastPrice,
+				exchange.AllSymbols[symbol].TikersData.Lock()
+				exchange.AllSymbols[symbol].TikersData.Spot = shared.TickersDataSpot{
+					Symbol:   list[0].Symbol,
+					BidPrice: list[0].BidPrice,
+					BidSize:  list[0].BidSize,
+					AskPrice: list[0].AskPrice,
+					AskSize:  list[0].AskSize,
 				}
-				exchange.AllSymbols[symbol].Tikers.Unlock()
+				exchange.AllSymbols[symbol].TikersData.Unlock()
 
 				slog.Info("Получены данные spotTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol+"USDT", "category", "spot")
 			}
@@ -556,12 +554,11 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 				Result struct {
 					Category string `json:"category"`
 					List     []struct {
-						Symbol    string `json:"symbol"`
-						BidPrice  string `json:"bid1Price"` // Лучшая цена покупки (лучший Bid)
-						BidSize   string `json:"bid1Size"`  // Объём лучшей покупки (Bid Size)
-						AskPrice  string `json:"ask1Price"` // Лучшая цена продажи (лучший Ask)
-						AskSize   string `json:"ask1Size"`  // Объём лучшей продажи (Ask Size)
-						LastPrice string `json:"lastPrice"` // Последняя цена сделки
+						Symbol   string `json:"symbol"`
+						BidPrice string `json:"bid1Price"` // Лучшая цена покупки (лучший Bid)
+						BidSize  string `json:"bid1Size"`  // Объём лучшей покупки (Bid Size)
+						AskPrice string `json:"ask1Price"` // Лучшая цена продажи (лучший Ask)
+						AskSize  string `json:"ask1Size"`  // Объём лучшей продажи (Ask Size)
 					} `json:"list"`
 				} `json:"result"`
 			}
@@ -588,7 +585,7 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 				slog.Info("Список фьючерсов", "exchangeName", exchange.ExchangeName, "symbol", symbol, "FuturesContractNameArr", FuturesContractNameArr)
 
 				//локальный массив для данных фьючерсов
-				localFuturesTickersArr := []shared.FuturesTickers{}
+				localFuturesTickersArr := []shared.TickersDataFutures{}
 
 				//для каждого элемента списка
 				for i := range list {
@@ -598,16 +595,15 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 						// slog.Warn("Perpetual найден")
 
 						//сохраним данные
-						exchange.AllSymbols[symbol].Tikers.Lock()
-						exchange.AllSymbols[symbol].Tikers.Perpetual = shared.PerpetualTickers{
-							Symbol:    list[i].Symbol,
-							BidPrice:  list[i].BidPrice,
-							BidSize:   list[i].BidSize,
-							AskPrice:  list[i].AskPrice,
-							AskSize:   list[i].AskSize,
-							LastPrice: list[i].LastPrice,
+						exchange.AllSymbols[symbol].TikersData.Lock()
+						exchange.AllSymbols[symbol].TikersData.Perpetual = shared.TickersDataPerpetual{
+							Symbol:   list[i].Symbol,
+							BidPrice: list[i].BidPrice,
+							BidSize:  list[i].BidSize,
+							AskPrice: list[i].AskPrice,
+							AskSize:  list[i].AskSize,
 						}
-						exchange.AllSymbols[symbol].Tikers.Unlock()
+						exchange.AllSymbols[symbol].TikersData.Unlock()
 
 					}
 
@@ -615,13 +611,12 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 						// slog.Warn("futures найден")
 
 						//создадим локальные данные
-						localTickers := shared.FuturesTickers{
-							Symbol:    list[i].Symbol,
-							BidPrice:  list[i].BidPrice,
-							BidSize:   list[i].BidSize,
-							AskPrice:  list[i].AskPrice,
-							AskSize:   list[i].AskSize,
-							LastPrice: list[i].LastPrice,
+						localTickers := shared.TickersDataFutures{
+							Symbol:   list[i].Symbol,
+							BidPrice: list[i].BidPrice,
+							BidSize:  list[i].BidSize,
+							AskPrice: list[i].AskPrice,
+							AskSize:  list[i].AskSize,
 						}
 
 						localFuturesTickersArr = append(localFuturesTickersArr, localTickers)
@@ -630,9 +625,9 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 
 				//если найдены фьючерсы
 				if len(localFuturesTickersArr) > 0 {
-					exchange.AllSymbols[symbol].Tikers.Lock()
-					exchange.AllSymbols[symbol].Tikers.Futures = localFuturesTickersArr
-					exchange.AllSymbols[symbol].Tikers.Unlock()
+					exchange.AllSymbols[symbol].TikersData.Lock()
+					exchange.AllSymbols[symbol].TikersData.Futures = localFuturesTickersArr
+					exchange.AllSymbols[symbol].TikersData.Unlock()
 
 				}
 
@@ -741,6 +736,9 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 
 				//переменные
 				currSeries := parts[1]
+				if len(currSeries) == 6 {
+					currSeries = "0" + currSeries
+				}
 				strike := parts[2]
 				optionType := parts[3]
 
@@ -791,199 +789,262 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 
 			// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "allSeriesMap", allSeriesMap)
 
-			var localAllOptionsTickers []shared.OptionsTickers
+			var localAllOptionsTickers []shared.TickersDataOptions
 
 			//для каждой серии
 			for series := range allSeriesMap {
 
-				//массив трайков
-				var allStrikes []string
-
-				//соберем все страйки их опционов Call
-				for _, call := range allSeriesMap[series].Calls {
-					allStrikes = append(allStrikes, call.Strike)
+				//найдем время до экспирации
+				if len(series) != 7 {
+					slog.Error("Неверная длина строки series", "error", err, "series", series)
+					return
 				}
 
-				//сортируем страйки по возрастанию
-				slices.SortFunc(allStrikes, func(a, b string) int {
-					valA, _ := strconv.ParseFloat(a, 64)
-					valB, _ := strconv.ParseFloat(b, 64)
+				// Приводим "05NOV26" к "05Nov26" для корректного парсинга шаблоном Go
+				formattedSeries := strings.ToUpper(series[:2]) + strings.Title(strings.ToLower(series[2:5])) + series[5:]
 
-					if valA < valB {
-						return -1 // a должно идти перед b
-					}
-					if valA > valB {
-						return 1 // a должно идти после b
-					}
-					return 0 // значения равны
-				})
-
-				// slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "allStrikes", allStrikes)
-
-				//длина массива всех страйков
-				lenAllStrikes := len(allStrikes)
-
-				//инициализируем локальную структуру с длиной данных lenAllStrikes
-				localOptionsLines := shared.OptionsLines{
-					Strikes: make([]string, lenAllStrikes),
-
-					Cmark: make([]string, lenAllStrikes),
-					Pmark: make([]string, lenAllStrikes),
-					Cask:  make([]string, lenAllStrikes),
-					Pask:  make([]string, lenAllStrikes),
-					Cbid:  make([]string, lenAllStrikes),
-					Pbid:  make([]string, lenAllStrikes),
-
-					Cdelta: make([]string, lenAllStrikes),
-					Pdelta: make([]string, lenAllStrikes),
-					Cgamma: make([]string, lenAllStrikes),
-					Pgamma: make([]string, lenAllStrikes),
-					Cvega:  make([]string, lenAllStrikes),
-					Pvega:  make([]string, lenAllStrikes),
-					Ctheta: make([]string, lenAllStrikes),
-					Ptheta: make([]string, lenAllStrikes),
-
-					Coi:   make([]string, lenAllStrikes),
-					Poi:   make([]string, lenAllStrikes),
-					Ctv:   make([]string, lenAllStrikes),
-					Ptv:   make([]string, lenAllStrikes),
-					Cv24h: make([]string, lenAllStrikes),
-					Pv24h: make([]string, lenAllStrikes),
-
-					CaskIv: make([]string, lenAllStrikes),
-					PaskIv: make([]string, lenAllStrikes),
-					CbidIv: make([]string, lenAllStrikes),
-					PbidIv: make([]string, lenAllStrikes),
-					MarkIv: make([]string, lenAllStrikes),
+				// Парсим дату по шаблону DDMMMYY
+				parsedDate, err := time.Parse("02Jan06", formattedSeries)
+				if err != nil {
+					slog.Error("Ошибка парсинга даты", "error", err)
+					return
 				}
 
-				//передадим страйки
-				copy(localOptionsLines.Strikes, allStrikes)
+				// Устанавливаем точное время экспирации — 08:00:00 UTC
+				expiryTime := time.Date(
+					parsedDate.Year(), parsedDate.Month(), parsedDate.Day(),
+					8, 0, 0, 0, time.UTC,
+				)
 
-				//для каждого опциона call
-				for j := range allSeriesMap[series].Calls {
+				//если серия опционов действующая
+				if time.Now().Before(expiryTime) {
+					//массив трайков
+					var allStrikes []string
 
-					//индекс страйка
-					var strikeIndex int
+					//соберем все страйки их опционов Call
+					for j := range allSeriesMap[series].Calls {
+						allStrikes = append(allStrikes, allSeriesMap[series].Calls[j].Strike)
+					}
 
-					//для каждого страйка в данных по страйкам
-					for k := range localOptionsLines.Strikes {
+					//сортируем страйки по возрастанию
+					slices.SortFunc(allStrikes, func(a, b string) int {
+						valA, _ := strconv.ParseFloat(a, 64)
+						valB, _ := strconv.ParseFloat(b, 64)
 
-						//если страйки совпадают
-						if allSeriesMap[series].Calls[j].Strike == localOptionsLines.Strikes[k] {
-							//запишем индекс страйка
-							strikeIndex = k
-							break
+						if valA < valB {
+							return -1 // a должно идти перед b
+						}
+						if valA > valB {
+							return 1 // a должно идти после b
+						}
+						return 0 // значения равны
+					})
+
+					// slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "allStrikes", allStrikes)
+
+					//длина массива всех страйков
+					lenAllStrikes := len(allStrikes)
+
+					//инициализируем локальную структуру с длиной данных lenAllStrikes
+					localOptionsLines := shared.OptionsLines{
+						Strikes: make([]string, lenAllStrikes),
+
+						Cmark: make([]string, lenAllStrikes),
+						Pmark: make([]string, lenAllStrikes),
+						Cask:  make([]string, lenAllStrikes),
+						Pask:  make([]string, lenAllStrikes),
+						Cbid:  make([]string, lenAllStrikes),
+						Pbid:  make([]string, lenAllStrikes),
+
+						Cdelta: make([]string, lenAllStrikes),
+						Pdelta: make([]string, lenAllStrikes),
+						Cgamma: make([]string, lenAllStrikes),
+						Pgamma: make([]string, lenAllStrikes),
+						Cvega:  make([]string, lenAllStrikes),
+						Pvega:  make([]string, lenAllStrikes),
+						Ctheta: make([]string, lenAllStrikes),
+						Ptheta: make([]string, lenAllStrikes),
+
+						Coi:   make([]string, lenAllStrikes),
+						Poi:   make([]string, lenAllStrikes),
+						Ctv:   make([]string, lenAllStrikes),
+						Ptv:   make([]string, lenAllStrikes),
+						Cv24h: make([]string, lenAllStrikes),
+						Pv24h: make([]string, lenAllStrikes),
+
+						CaskIv: make([]string, lenAllStrikes),
+						PaskIv: make([]string, lenAllStrikes),
+						CbidIv: make([]string, lenAllStrikes),
+						PbidIv: make([]string, lenAllStrikes),
+						MarkIv: make([]string, lenAllStrikes),
+
+						Cgex:   make([]string, lenAllStrikes),
+						Pgex:   make([]string, lenAllStrikes),
+						Netgex: make([]string, lenAllStrikes),
+					}
+
+					//передадим страйки
+					copy(localOptionsLines.Strikes, allStrikes)
+
+					//для каждого опциона call
+					for j := range allSeriesMap[series].Calls {
+
+						//индекс страйка
+						var strikeIndex int
+
+						//для каждого страйка в данных по страйкам
+						for k := range localOptionsLines.Strikes {
+
+							//если страйки совпадают
+							if allSeriesMap[series].Calls[j].Strike == localOptionsLines.Strikes[k] {
+								//запишем индекс страйка
+								strikeIndex = k
+								break
+							}
+						}
+
+						//перепишем данные Call опциона в соответствии с индексом
+						localOptionsLines.Cmark[strikeIndex] = allSeriesMap[series].Calls[j].Data.MarkPrice
+						localOptionsLines.Cask[strikeIndex] = allSeriesMap[series].Calls[j].Data.Ask1Price
+						localOptionsLines.Cbid[strikeIndex] = allSeriesMap[series].Calls[j].Data.Bid1Price
+
+						localOptionsLines.Cdelta[strikeIndex] = allSeriesMap[series].Calls[j].Data.Delta
+						localOptionsLines.Cgamma[strikeIndex] = allSeriesMap[series].Calls[j].Data.Gamma
+						localOptionsLines.Cvega[strikeIndex] = allSeriesMap[series].Calls[j].Data.Vega
+						localOptionsLines.Ctheta[strikeIndex] = allSeriesMap[series].Calls[j].Data.Theta
+
+						localOptionsLines.Coi[strikeIndex] = allSeriesMap[series].Calls[j].Data.OpenInterest
+						localOptionsLines.Ctv[strikeIndex] = allSeriesMap[series].Calls[j].Data.TotalVolume
+						localOptionsLines.Cv24h[strikeIndex] = allSeriesMap[series].Calls[j].Data.Volume24h
+
+						localOptionsLines.CaskIv[strikeIndex] = allSeriesMap[series].Calls[j].Data.Ask1Iv
+						localOptionsLines.CbidIv[strikeIndex] = allSeriesMap[series].Calls[j].Data.Bid1Iv
+
+						//передадим линию MarkIv
+						localOptionsLines.MarkIv[strikeIndex] = allSeriesMap[series].Calls[j].Data.MarkIv
+
+					}
+
+					//для каждого опциона put
+					for j := range allSeriesMap[series].Puts {
+
+						//индекс страйка
+						var strikeIndex int
+
+						//для каждого страйка в данных по страйкам
+						for k := range localOptionsLines.Strikes {
+							//если страйки совпадают
+							if allSeriesMap[series].Puts[j].Strike == localOptionsLines.Strikes[k] {
+								//запишем индекс страйка
+								strikeIndex = k
+								break
+							}
+						}
+
+						//перепишем данные Put опциона в соответствии с индексом
+						localOptionsLines.Pmark[strikeIndex] = allSeriesMap[series].Puts[j].Data.MarkPrice
+						localOptionsLines.Pask[strikeIndex] = allSeriesMap[series].Puts[j].Data.Ask1Price
+						localOptionsLines.Pbid[strikeIndex] = allSeriesMap[series].Puts[j].Data.Bid1Price
+
+						localOptionsLines.Pdelta[strikeIndex] = allSeriesMap[series].Puts[j].Data.Delta
+						localOptionsLines.Pgamma[strikeIndex] = allSeriesMap[series].Puts[j].Data.Gamma
+						localOptionsLines.Pvega[strikeIndex] = allSeriesMap[series].Puts[j].Data.Vega
+						localOptionsLines.Ptheta[strikeIndex] = allSeriesMap[series].Puts[j].Data.Theta
+
+						localOptionsLines.Poi[strikeIndex] = allSeriesMap[series].Puts[j].Data.OpenInterest
+						localOptionsLines.Ptv[strikeIndex] = allSeriesMap[series].Puts[j].Data.TotalVolume
+						localOptionsLines.Pv24h[strikeIndex] = allSeriesMap[series].Puts[j].Data.Volume24h
+
+						localOptionsLines.PaskIv[strikeIndex] = allSeriesMap[series].Puts[j].Data.Ask1Iv
+						localOptionsLines.PbidIv[strikeIndex] = allSeriesMap[series].Puts[j].Data.Bid1Iv
+
+						//MarkIv не пишем
+
+					}
+
+					// slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "localOptionsLines", localOptionsLines)
+
+					//минимум линии
+					var minMarkIvStr string
+
+					//если линия MarkIv не нулевая
+					if len(localOptionsLines.MarkIv) > 0 {
+
+						//первое значение макс float64
+						minMarkIv := math.MaxFloat64
+
+						// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "localOptionsLines.MarkIv", localOptionsLines.MarkIv)
+
+						for j := range localOptionsLines.MarkIv {
+
+							// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "markIvStr", markIvStr)
+
+							// Конвертируем строку в число (база 10, размер int)
+							num, err := strconv.ParseFloat(localOptionsLines.MarkIv[j], 64)
+							if err != nil {
+								slog.Error("Ошибка конвертации строки '%s' в число: %w", localOptionsLines.MarkIv[j], err)
+								return
+							}
+
+							// Если текущее число меньше сохраненного минимума, обновляем минимум
+							if num < minMarkIv {
+								//сохраним числовое значение
+								minMarkIv = num
+								//сохраним строковое значение
+								minMarkIvStr = localOptionsLines.MarkIv[j]
+							}
 						}
 					}
 
-					//перепишем данные Call опциона в соответствии с индексом
-					localOptionsLines.Cmark[strikeIndex] = allSeriesMap[series].Calls[j].Data.MarkPrice
-					localOptionsLines.Cask[strikeIndex] = allSeriesMap[series].Calls[j].Data.Ask1Price
-					localOptionsLines.Cbid[strikeIndex] = allSeriesMap[series].Calls[j].Data.Bid1Price
-
-					localOptionsLines.Cdelta[strikeIndex] = allSeriesMap[series].Calls[j].Data.Delta
-					localOptionsLines.Cgamma[strikeIndex] = allSeriesMap[series].Calls[j].Data.Gamma
-					localOptionsLines.Cvega[strikeIndex] = allSeriesMap[series].Calls[j].Data.Vega
-					localOptionsLines.Ctheta[strikeIndex] = allSeriesMap[series].Calls[j].Data.Theta
-
-					localOptionsLines.Coi[strikeIndex] = allSeriesMap[series].Calls[j].Data.OpenInterest
-					localOptionsLines.Ctv[strikeIndex] = allSeriesMap[series].Calls[j].Data.TotalVolume
-					localOptionsLines.Cv24h[strikeIndex] = allSeriesMap[series].Calls[j].Data.Volume24h
-
-					localOptionsLines.CaskIv[strikeIndex] = allSeriesMap[series].Calls[j].Data.Ask1Iv
-					localOptionsLines.CbidIv[strikeIndex] = allSeriesMap[series].Calls[j].Data.Bid1Iv
-
-					//передадим линию MarkIv
-					localOptionsLines.MarkIv[strikeIndex] = allSeriesMap[series].Calls[j].Data.MarkIv
-
-				}
-
-				//для каждого опциона put
-				for j := range allSeriesMap[series].Puts {
-
-					//индекс страйка
-					var strikeIndex int
-
-					//для каждого страйка в данных по страйкам
-					for k := range localOptionsLines.Strikes {
-						//если страйки совпадают
-						if allSeriesMap[series].Puts[j].Strike == localOptionsLines.Strikes[k] {
-							//запишем индекс страйка
-							strikeIndex = k
-							break
-						}
-					}
-
-					//перепишем данные Put опциона в соответствии с индексом
-					localOptionsLines.Pmark[strikeIndex] = allSeriesMap[series].Puts[j].Data.MarkPrice
-					localOptionsLines.Pask[strikeIndex] = allSeriesMap[series].Puts[j].Data.Ask1Price
-					localOptionsLines.Pbid[strikeIndex] = allSeriesMap[series].Puts[j].Data.Bid1Price
-
-					localOptionsLines.Pdelta[strikeIndex] = allSeriesMap[series].Puts[j].Data.Delta
-					localOptionsLines.Pgamma[strikeIndex] = allSeriesMap[series].Puts[j].Data.Gamma
-					localOptionsLines.Pvega[strikeIndex] = allSeriesMap[series].Puts[j].Data.Vega
-					localOptionsLines.Ptheta[strikeIndex] = allSeriesMap[series].Puts[j].Data.Theta
-
-					localOptionsLines.Poi[strikeIndex] = allSeriesMap[series].Puts[j].Data.OpenInterest
-					localOptionsLines.Ptv[strikeIndex] = allSeriesMap[series].Puts[j].Data.TotalVolume
-					localOptionsLines.Pv24h[strikeIndex] = allSeriesMap[series].Puts[j].Data.Volume24h
-
-					localOptionsLines.PaskIv[strikeIndex] = allSeriesMap[series].Puts[j].Data.Ask1Iv
-					localOptionsLines.PbidIv[strikeIndex] = allSeriesMap[series].Puts[j].Data.Bid1Iv
-
-					//MarkIv не пишем
-
-				}
-
-				// slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "localOptionsLines", localOptionsLines)
-
-				//минимум линии
-				var minMarkIvStr string
-
-				//если линия MarkIv не нулевая
-				if len(localOptionsLines.MarkIv) > 0 {
-
-					//первое значение макс float64
-					minMarkIv := math.MaxFloat64
-
-					// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "localOptionsLines.MarkIv", localOptionsLines.MarkIv)
-
-					for j := range localOptionsLines.MarkIv {
-
-						// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "markIvStr", markIvStr)
-
-						// Конвертируем строку в число (база 10, размер int)
-						num, err := strconv.ParseFloat(localOptionsLines.MarkIv[j], 64)
+					//получим gex
+					for j := range localOptionsLines.Strikes {
+						// Парсим Call OI и Call Gamma
+						cOi, err := strconv.ParseFloat(localOptionsLines.Coi[j], 64)
 						if err != nil {
-							slog.Error("Ошибка конвертации строки '%s' в число: %w", localOptionsLines.MarkIv[j], err)
-							return
+							cOi = 0.0
+						}
+						cGamma, err := strconv.ParseFloat(localOptionsLines.Cgamma[j], 64)
+						if err != nil {
+							cGamma = 0.0
 						}
 
-						// Если текущее число меньше сохраненного минимума, обновляем минимум
-						if num < minMarkIv {
-							//сохраним числовое значение
-							minMarkIv = num
-							//сохраним строковое значение
-							minMarkIvStr = localOptionsLines.MarkIv[j]
+						// Парсим Put OI и Put Gamma
+						pOi, err := strconv.ParseFloat(localOptionsLines.Poi[j], 64)
+						if err != nil {
+							pOi = 0.0
 						}
+						pGamma, err := strconv.ParseFloat(localOptionsLines.Pgamma[j], 64)
+						if err != nil {
+							pGamma = 0.0
+						}
+
+						// Считаем GEX значения
+						callGex := cOi * cGamma
+						putGex := -(pOi * pGamma) // Путы берутся со знаком минус
+						netGex := callGex + putGex
+
+						// Форматируем float64 обратно в string и записываем в результирующую структуру
+						localOptionsLines.Cgex[j] = strconv.FormatFloat(callGex, 'f', 4, 64)
+						localOptionsLines.Pgex[j] = strconv.FormatFloat(putGex, 'f', 4, 64)
+						localOptionsLines.Netgex[j] = strconv.FormatFloat(netGex, 'f', 4, 64)
 					}
-				}
 
-				//заполним данные для текущей серии опционов
-				localOptionsTickers := shared.OptionsTickers{
-					Symbol:       symbol,
-					Series:       series,
-					MinMarkIv:    minMarkIvStr,
-					OptionsLines: localOptionsLines,
-				}
+					//заполним данные для текущей серии опционов
+					localOptionsTickers := shared.TickersDataOptions{
+						Symbol:       symbol,
+						Series:       series,
+						ExpiryTime:   strconv.FormatInt(expiryTime.UnixMilli(), 10),
+						MinMarkIv:    minMarkIvStr,
+						OptionsLines: localOptionsLines,
+					}
 
-				localAllOptionsTickers = append(localAllOptionsTickers, localOptionsTickers)
+					localAllOptionsTickers = append(localAllOptionsTickers, localOptionsTickers)
+				}
 
 			}
 
 			//сортируем итоговый результат по полю series по возрастанию времени доставки
-			slices.SortFunc(localAllOptionsTickers, func(a, b shared.OptionsTickers) int {
+			slices.SortFunc(localAllOptionsTickers, func(a, b shared.TickersDataOptions) int {
 				timeA, errA := convert.SeriesToDeliveryTimeMs(a.Series)
 				timeB, errB := convert.SeriesToDeliveryTimeMs(b.Series)
 
@@ -1006,11 +1067,11 @@ func (b *BybitClient) GetAllTickersSequental(exchange *shared.Exchange) {
 			})
 
 			//запишем полученные данные
-			exchange.AllSymbols[symbol].Tikers.Lock()
-			exchange.AllSymbols[symbol].Tikers.Options = localAllOptionsTickers
-			OptionsLen := len(exchange.AllSymbols[symbol].Tikers.Options)
+			exchange.AllSymbols[symbol].TikersData.Lock()
+			exchange.AllSymbols[symbol].TikersData.Options = localAllOptionsTickers
+			OptionsLen := len(exchange.AllSymbols[symbol].TikersData.Options)
 			// slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].Tikers.Options)
-			exchange.AllSymbols[symbol].Tikers.Unlock()
+			exchange.AllSymbols[symbol].TikersData.Unlock()
 
 			slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "OptionsLen", OptionsLen)
 		}
