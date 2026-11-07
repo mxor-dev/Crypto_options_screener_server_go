@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -327,14 +326,14 @@ func main() {
 
 		//структура даннх ответа
 		type KlineResponse struct {
-			ExchangeName string
-			Symbol       string
-			Contract     string
-			Category     string
-			Interval     string
-			Klines       [][]string
-			LastCandle   []string
-			Ts           string
+			ExchangeName string     `json:"exchange_name"`
+			Symbol       string     `json:"symbol"`
+			Contract     string     `json:"contract"`
+			Category     string     `json:"category"`
+			Interval     string     `json:"interval"`
+			Klines       [][]string `json:"klines"`
+			LastCandle   []string   `json:"last_candle"`
+			Ts           int64      `json:"ts"`
 		}
 
 		// парсим данные
@@ -423,7 +422,7 @@ func main() {
 			response.Interval = KlineData.Interval
 			response.Klines = KlineData.Klines
 			response.LastCandle = KlineData.LastCandle
-			response.Ts = strconv.FormatInt(KlineData.Ts.UnixMilli(), 10)
+			response.Ts = KlineData.Ts.UnixMilli()
 
 			//дадим ответ
 			c.JSON(http.StatusOK, gin.H{
@@ -443,7 +442,7 @@ func main() {
 			response.Interval = KlineData.Interval
 			response.Klines = KlineData.Klines
 			response.LastCandle = KlineData.LastCandle
-			response.Ts = strconv.FormatInt(KlineData.Ts.UnixMilli(), 10)
+			response.Ts = KlineData.Ts.UnixMilli()
 
 			//дадим ответ
 			c.JSON(http.StatusOK, gin.H{
@@ -469,8 +468,8 @@ func main() {
 
 		//структура даннх ответа
 		type LastCandleResponse struct {
-			LastCandle []string
-			Ts         string
+			LastCandle []string `json:"last_candle"`
+			Ts         string   `json:"ts"`
 		}
 
 		// парсим данные
@@ -510,9 +509,9 @@ func main() {
 
 			//дадим пустой ответ
 			c.JSON(http.StatusOK, gin.H{
-				"status":     "noKlineData",
-				"lastCandle": "",
-				"ts":         "",
+				"status":      "noKlineData",
+				"last_candle": "",
+				"ts":          "",
 			})
 			return
 		}
@@ -529,7 +528,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{
 			"status":      "success",
 			"last_candle": lastCandle,
-			"ts":          strconv.FormatInt(ts.UnixMilli(), 10),
+			"ts":          ts.UnixMilli(),
 		})
 
 		slog.Warn("Отправлена последняя свеча", "url", "/api/last_candle", "req", req, "lastCandle", lastCandle)
