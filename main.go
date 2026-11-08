@@ -625,6 +625,9 @@ func main() {
 				Cbid:  []string{},
 				Pbid:  []string{},
 
+				Cspread: []string{},
+				Pspread: []string{},
+
 				Cdelta: []string{},
 				Pdelta: []string{},
 				Cgamma: []string{},
@@ -650,6 +653,11 @@ func main() {
 				Cgex:   []string{},
 				Pgex:   []string{},
 				Netgex: []string{},
+
+				CFeeM: []string{},
+				PFeeM: []string{},
+				CFeeT: []string{},
+				PFeeT: []string{},
 			}
 
 			//для каждой линии
