@@ -140,6 +140,23 @@ func main() {
 				WsCmdMsgDeleteDelta: 30 * time.Second, //дальше уже вебсокет отключается
 			},
 			KlineLimit: "1000",
+			FeeRates: shared.FeeRates{
+				Spot: shared.FeeRatesSpot{
+					MakerFeeRate: 0.1,
+					TakerFeeRate: 0.31,
+				},
+				Futures: shared.FeeRatesFutures{
+					MakerFeeRate: 0.02,
+					TakerFeeRate: 0.055,
+				},
+				Options: shared.FeeRatesOptions{
+					MaxPartRate:        7,
+					LiquidationFeeRate: 0.2,
+					MakerFeeRate:       0.02,
+					TakerFeeRate:       0.03,
+					ExpirationFeeRate:  0.015,
+				},
+			},
 		},
 		"Mexc": {
 			IsActive:     true,

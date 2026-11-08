@@ -15,6 +15,7 @@ type Exchange struct {
 	AllSymbols     map[string]*SymbolData
 	FetchIntervals FetchIntervals
 	KlineLimit     string
+	FeeRates       FeeRates
 	Client         Client
 
 	AllKlineData KlineDataMapMu
@@ -342,6 +343,9 @@ type OptionsLines struct {
 	Cbid  []string `json:"c_bid"`
 	Pbid  []string `json:"p_bid"`
 
+	Cspread []string `json:"c_spread"`
+	Pspread []string `json:"p_spread"`
+
 	Cdelta []string `json:"c_delta"`
 	Pdelta []string `json:"p_delta"`
 	Cgamma []string `json:"c_gamma"`
@@ -367,6 +371,11 @@ type OptionsLines struct {
 	Cgex   []string `json:"c_gex"`
 	Pgex   []string `json:"p_gex"`
 	Netgex []string `json:"net_gex"`
+
+	CFeeM []string `json:"c_fee_m"`
+	PFeeM []string `json:"p_fee_m"`
+	CFeeT []string `json:"c_fee_t"`
+	PFeeT []string `json:"p_fee_t"`
 }
 
 type LastPriceResponse struct {
@@ -405,4 +414,27 @@ func (g *GenIDMu) Next() string {
 	g.mu.Unlock()
 
 	return strconv.Itoa(val) // Быстро переводим в строку
+}
+
+type FeeRatesSpot struct {
+	MakerFeeRate float64 `json:"maker_fee_rate"`
+	TakerFeeRate float64 `json:"taker_fee_rate"`
+}
+type FeeRatesFutures struct {
+	MakerFeeRate float64 `json:"maker_fee_rate"`
+	TakerFeeRate float64 `json:"taker_fee_rate"`
+}
+
+type FeeRatesOptions struct {
+	MaxPartRate        float64 `json:"max_part_rate"`
+	LiquidationFeeRate float64 `json:"liquidation_fee_rate"`
+	MakerFeeRate       float64 `json:"maker_fee_rate"`
+	TakerFeeRate       float64 `json:"taker_fee_rate"`
+	ExpirationFeeRate  float64 `json:"expiration_fee_rate"`
+}
+
+type FeeRates struct {
+	Spot    FeeRatesSpot    `json:"spot_fee_rates"`
+	Futures FeeRatesFutures `json:"futures_fee_rates"`
+	Options FeeRatesOptions `json:"options_fee_rates"`
 }
