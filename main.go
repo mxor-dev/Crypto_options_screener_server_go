@@ -592,10 +592,11 @@ func main() {
 		}
 
 		type TickersResponse struct {
-			Spot      shared.TickersDataSpot      `json:"spot"`
-			Perpetual shared.TickersDataPerpetual `json:"perpetual"`
-			Futures   []shared.TickersDataFutures `json:"futures"`
-			Options   []shared.TickersDataOptions `json:"options"`
+			Spot       shared.TickersDataSpot      `json:"spot"`
+			Perpetual  shared.TickersDataPerpetual `json:"perpetual"`
+			Futures    []shared.TickersDataFutures `json:"futures"`
+			Options    []shared.TickersDataOptions `json:"options"`
+			IndexPrice string                      `json:"index_price"`
 		}
 
 		//получим данные тикеров
@@ -604,6 +605,7 @@ func main() {
 		perpetual := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Perpetual
 		futures := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Futures
 		options := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Options
+		indexPrice := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.IndexPrice
 		allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Unlock()
 
 		newOptionsArr := []shared.TickersDataOptions{}
@@ -741,10 +743,11 @@ func main() {
 		}
 
 		tickersResponse := TickersResponse{
-			Spot:      spot,
-			Perpetual: perpetual,
-			Futures:   futures,
-			Options:   newOptionsArr,
+			Spot:       spot,
+			Perpetual:  perpetual,
+			Futures:    futures,
+			Options:    newOptionsArr,
+			IndexPrice: indexPrice,
 		}
 
 		//дадим ответ

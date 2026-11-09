@@ -294,10 +294,11 @@ type FetchIntervals struct {
 // }
 
 type TikersDataMu struct {
-	Spot      TickersDataSpot
-	Perpetual TickersDataPerpetual
-	Futures   []TickersDataFutures
-	Options   []TickersDataOptions
+	Spot       TickersDataSpot
+	Perpetual  TickersDataPerpetual
+	Futures    []TickersDataFutures
+	Options    []TickersDataOptions
+	IndexPrice string
 	sync.Mutex
 }
 

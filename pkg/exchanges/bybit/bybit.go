@@ -1139,6 +1139,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 			//запишем полученные данные
 			exchange.AllSymbols[symbol].TikersData.Lock()
 			exchange.AllSymbols[symbol].TikersData.Options = localAllOptionsTickers
+			exchange.AllSymbols[symbol].TikersData.IndexPrice = strconv.FormatFloat(indexPrice, 'f', 4, 64)
 			OptionsLen := len(exchange.AllSymbols[symbol].TikersData.Options)
 			// slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].Tikers.Options)
 			exchange.AllSymbols[symbol].TikersData.Unlock()
