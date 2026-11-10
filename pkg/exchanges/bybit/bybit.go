@@ -1461,6 +1461,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 			klineDataMu.KlineData.Ts = time.Now()
 			klineDataMu.Unlock()
 
+			slog.Debug("Пришли данные", "resp.Data", resp.Data)
 			slog.Debug("Ws пришла last_candle", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key, "klines[0]", klines[0])
 			return
 		}

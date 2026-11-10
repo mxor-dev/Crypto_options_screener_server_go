@@ -533,7 +533,7 @@ func main() {
 
 		KlineDataMu.Lock()
 		//получим данные последней свечки
-		lastCandle := KlineDataMu.KlineData.Klines[len(KlineDataMu.KlineData.Klines)-1]
+		lastCandle := KlineDataMu.KlineData.LastCandle
 		ts := KlineDataMu.KlineData.Ts
 		//продлим время жизни данным
 		KlineDataMu.KlineData.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
