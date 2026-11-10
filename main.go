@@ -747,14 +747,18 @@ func main() {
 
 			//сформируем данные опционов с неообходимыми линиями
 			new_options := shared.TickersDataOptions{
-				Symbol:        options[i].Symbol,
-				Series:        options[i].Series,
-				ExpiryTime:    options[i].ExpiryTime,
+				Symbol:     options[i].Symbol,
+				Series:     options[i].Series,
+				ExpiryTime: options[i].ExpiryTime,
+
+				MinMarkIv:             options[i].MinMarkIv,
+				NearestIvToIndexPrice: options[i].NearestIvToIndexPrice,
+
 				CallIv25Delta: options[i].CallIv25Delta,
 				PutIv25Delta:  options[i].PutIv25Delta,
 				SkewIv25Delta: options[i].SkewIv25Delta,
-				MinMarkIv:     options[i].MinMarkIv,
-				OptionsLines:  newOptionsLines,
+
+				OptionsLines: newOptionsLines,
 			}
 
 			//добавим данные опционов в общий массив

@@ -332,10 +332,11 @@ type TickersDataOptions struct {
 	Series     string `json:"series"`
 	ExpiryTime string `json:"expiry_time"`
 
-	MinMarkIv     string `json:"min_mark_iv"`
-	CallIv25Delta string `json:"call_iv_25_delta"`
-	PutIv25Delta  string `json:"put_iv_25_delta"`
-	SkewIv25Delta string `json:"skew_iv_25_delta"` //я считаю как CallIv25Delta - PutIv25Delta
+	MinMarkIv             [2]string `json:"min_mark_iv"`
+	NearestIvToIndexPrice [2]string `json:"nearest_iv_to_index_price"`
+	CallIv25Delta         [2]string `json:"call_iv_25_delta"`
+	PutIv25Delta          [2]string `json:"put_iv_25_delta"`
+	SkewIv25Delta         string    `json:"skew_iv_25_delta"` //я считаю как CallIv25Delta - PutIv25Delta
 
 	OptionsLines OptionsLines `json:"options_lines"`
 }
