@@ -1038,7 +1038,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 								//сохраним числовое значение
 								minMarkIv = num
 								//сохраним значение в массиве строк
-								minMarkIvStr = [2]string{strconv.Itoa(j), localOptionsLines.MarkIv[j]}
+								minMarkIvStr = [2]string{localOptionsLines.Strikes[j], localOptionsLines.MarkIv[j]}
 							}
 						}
 
@@ -1067,7 +1067,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 							// Если текущая дельта меньше последней
 							if currIndexPriceDelta < lastIndexPriceDelta {
 								//запишем индекс и значение iv
-								nearestIvToIndexPrice = [2]string{strconv.Itoa(j), localOptionsLines.MarkIv[j]}
+								nearestIvToIndexPrice = [2]string{localOptionsLines.Strikes[j], localOptionsLines.MarkIv[j]}
 								//обновим последнюю дельту
 								lastIndexPriceDelta = currIndexPriceDelta
 							}
@@ -1076,8 +1076,8 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						//********* callIv25DeltaStr putIv25DeltaStr skewIv25DeltaStr ***********
 
 						//начальные значения
-						callIv25DeltaStr = [2]string{"0", localOptionsLines.MarkIv[0]}
-						putIv25DeltaStr = [2]string{"0", localOptionsLines.MarkIv[0]}
+						callIv25DeltaStr = [2]string{localOptionsLines.Strikes[0], localOptionsLines.MarkIv[0]}
+						putIv25DeltaStr = [2]string{localOptionsLines.Strikes[0], localOptionsLines.MarkIv[0]}
 
 						//перевод в дельту в числа
 						cdeltaFloat, err := strconv.ParseFloat(localOptionsLines.Cdelta[0], 64)
@@ -1114,14 +1114,14 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 							if currCallDeltaDelta < lastCallDeltaDelta {
 
 								//запишем текущие значения MarkIv
-								callIv25DeltaStr = [2]string{strconv.Itoa(j), localOptionsLines.MarkIv[j]}
+								callIv25DeltaStr = [2]string{localOptionsLines.Strikes[j], localOptionsLines.MarkIv[j]}
 
 								//поменяем последнее значение
 								lastCallDeltaDelta = currCallDeltaDelta
 							}
 							if currPutDeltaDelta < lastPutDeltaDelta {
 								//запишем текущие значения MarkIv
-								putIv25DeltaStr = [2]string{strconv.Itoa(j), localOptionsLines.MarkIv[j]}
+								putIv25DeltaStr = [2]string{localOptionsLines.Strikes[j], localOptionsLines.MarkIv[j]}
 
 								//поменяем последнее значение
 								lastPutDeltaDelta = currPutDeltaDelta
