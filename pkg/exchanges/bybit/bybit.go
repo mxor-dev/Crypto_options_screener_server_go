@@ -1091,7 +1091,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 						//начальные дельты для путов и колов
 						lastCallDeltaDelta := math.Abs(0.25 - cdeltaFloat)
-						lastPutDeltaDelta := math.Abs(0.25 - pdeltaFloat)
+						lastPutDeltaDelta := math.Abs(0.25 - math.Abs(pdeltaFloat))
 
 						for j := range localOptionsLines.Strikes {
 							//перевод в числа
@@ -1108,7 +1108,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 							//текущие дельты для путов и колов
 							currCallDeltaDelta := math.Abs(0.25 - cdeltaFloat)
-							currPutDeltaDelta := math.Abs(0.25 - pdeltaFloat)
+							currPutDeltaDelta := math.Abs(0.25 - math.Abs(pdeltaFloat))
 
 							//если текущая дельта меньше предыдущей
 							if currCallDeltaDelta < lastCallDeltaDelta {
