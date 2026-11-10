@@ -1006,8 +1006,11 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 					// slog.Warn("Получены страйки", "ExchangeName", b.ExchangeName, "series", series, "localOptionsLines", localOptionsLines)
 
-					//минимум линии
+					//минимум линии и IV для 25 дельты
 					var minMarkIvStr string
+					var callIv25DeltaStr string
+					var putIv25DeltaStr string
+					var skewIv25DeltaStr string
 
 					//если линия MarkIv не нулевая
 					if len(localOptionsLines.MarkIv) > 0 {
@@ -1017,6 +1020,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 						// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "localOptionsLines.MarkIv", localOptionsLines.MarkIv)
 
+						//найдем minMarkIv
 						for j := range localOptionsLines.MarkIv {
 
 							// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "markIvStr", markIvStr)
@@ -1036,6 +1040,74 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 								minMarkIvStr = localOptionsLines.MarkIv[j]
 							}
 						}
+
+						//начальные значения
+						callIv25DeltaStr = localOptionsLines.MarkIv[0]
+						putIv25DeltaStr = localOptionsLines.MarkIv[0]
+
+						//перевод в дельту в числа
+						cdeltaFloat, err := strconv.ParseFloat(localOptionsLines.Cdelta[0], 64)
+						if err != nil {
+							cdeltaFloat = 0.0
+						}
+						pdeltaFloat, err := strconv.ParseFloat(localOptionsLines.Pdelta[0], 64)
+						if err != nil {
+							pdeltaFloat = 0.0
+						}
+
+						//начальные дельты для путов и колов
+						lastCallDeltaDelta := math.Abs(0.25 - cdeltaFloat)
+						lastPutDeltaDelta := math.Abs(0.25 - pdeltaFloat)
+
+						for j := range localOptionsLines.Strikes {
+							//перевод в числа
+							cdeltaFloat, err = strconv.ParseFloat(localOptionsLines.Cdelta[j], 64)
+							if err != nil {
+								// Обработка ошибки: если в строке прилетел мусор, задаем дефолтное значение
+								cdeltaFloat = 0.0
+							}
+							pdeltaFloat, err = strconv.ParseFloat(localOptionsLines.Pdelta[j], 64)
+							if err != nil {
+								// Обработка ошибки: если в строке прилетел мусор, задаем дефолтное значение
+								pdeltaFloat = 0.0
+							}
+
+							//текущие дельты для путов и колов
+							currCallDeltaDelta := math.Abs(0.25 - cdeltaFloat)
+							currPutDeltaDelta := math.Abs(0.25 - pdeltaFloat)
+
+							//если текущая дельта меньше предыдущей
+							if currCallDeltaDelta < lastCallDeltaDelta {
+
+								//запишем текущие значения MarkIv
+								callIv25DeltaStr = localOptionsLines.MarkIv[j]
+
+								//поменяем последнее значение
+								lastCallDeltaDelta = currCallDeltaDelta
+							}
+							if currPutDeltaDelta < lastPutDeltaDelta {
+								//запишем текущие значения MarkIv
+								putIv25DeltaStr = localOptionsLines.MarkIv[j]
+
+								//поменяем последнее значение
+								lastPutDeltaDelta = currPutDeltaDelta
+							}
+
+						}
+
+						//перевод полученных MarkIv в числа
+						call25DeltaIv, err := strconv.ParseFloat(callIv25DeltaStr, 64)
+						if err != nil {
+							call25DeltaIv = 0.0
+						}
+						put25DeltaIv, err := strconv.ParseFloat(putIv25DeltaStr, 64)
+						if err != nil {
+							put25DeltaIv = 0.0
+						}
+
+						//просчитаем skew
+						skewIv25DeltaStr = strconv.FormatFloat(call25DeltaIv-put25DeltaIv, 'f', 4, 64)
+
 					}
 
 					//получим gex
@@ -1101,10 +1173,15 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 					//заполним данные для текущей серии опционов
 					localOptionsTickers := shared.TickersDataOptions{
-						Symbol:       symbol,
-						Series:       series,
-						ExpiryTime:   strconv.FormatInt(expiryTime.UnixMilli(), 10),
-						MinMarkIv:    minMarkIvStr,
+						Symbol:     symbol,
+						Series:     series,
+						ExpiryTime: strconv.FormatInt(expiryTime.UnixMilli(), 10),
+
+						MinMarkIv:     minMarkIvStr,
+						CallIv25Delta: callIv25DeltaStr,
+						PutIv25Delta:  putIv25DeltaStr,
+						SkewIv25Delta: skewIv25DeltaStr,
+
 						OptionsLines: localOptionsLines,
 					}
 
@@ -1140,6 +1217,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 			exchange.AllSymbols[symbol].TikersData.Lock()
 			exchange.AllSymbols[symbol].TikersData.Options = localAllOptionsTickers
 			exchange.AllSymbols[symbol].TikersData.IndexPrice = strconv.FormatFloat(indexPrice, 'f', 4, 64)
+			exchange.AllSymbols[symbol].TikersData.Ts = time.Now()
 			OptionsLen := len(exchange.AllSymbols[symbol].TikersData.Options)
 			// slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].Tikers.Options)
 			exchange.AllSymbols[symbol].TikersData.Unlock()

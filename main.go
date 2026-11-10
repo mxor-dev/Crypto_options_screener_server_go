@@ -110,9 +110,9 @@ func main() {
 			IsActive:     true,
 			ExchangeName: "Bybit",
 			AllSymbols: map[string]*shared.SymbolData{
-				"BTC": {Symbol: "BTC", FetchFilter: []string{"spot", "linear", "option"}},
-				// "DOGE": {Symbol: "DOGE", FetchFilter: []string{"linear", "option"}},
-				// "ETH":  {Symbol: "ETH", FetchFilter: []string{"linear", "option"}},
+				"BTC":  {Symbol: "BTC", FetchFilter: []string{"spot", "linear", "option"}},
+				"DOGE": {Symbol: "DOGE", FetchFilter: []string{"spot", "linear", "option"}},
+				"ETH":  {Symbol: "ETH", FetchFilter: []string{"spot", "linear", "option"}},
 				// "HYPE": {Symbol: "HYPE", FetchFilter: []string{"linear", "option"}},
 				// "MNT":  {Symbol: "MNT", FetchFilter: []string{"linear", "option"}},
 				// "MU":   {Symbol: "MU", FetchFilter: []string{"linear", "option"}},
@@ -597,6 +597,7 @@ func main() {
 			Futures    []shared.TickersDataFutures `json:"futures"`
 			Options    []shared.TickersDataOptions `json:"options"`
 			IndexPrice string                      `json:"index_price"`
+			Ts         int64                       `json:"ts"`
 		}
 
 		//получим данные тикеров
@@ -606,6 +607,7 @@ func main() {
 		futures := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Futures
 		options := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Options
 		indexPrice := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.IndexPrice
+		ts := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Ts.UnixMilli()
 		allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Unlock()
 
 		newOptionsArr := []shared.TickersDataOptions{}
@@ -679,6 +681,11 @@ func main() {
 				case "p_bid":
 					newOptionsLines.Pbid = availableOptionsLines.Pbid
 
+				case "c_spread":
+					newOptionsLines.Cspread = availableOptionsLines.Cspread
+				case "p_spread":
+					newOptionsLines.Pspread = availableOptionsLines.Pspread
+
 				case "c_delta":
 					newOptionsLines.Cdelta = availableOptionsLines.Cdelta
 				case "p_delta":
@@ -726,16 +733,28 @@ func main() {
 					newOptionsLines.Pgex = availableOptionsLines.Pgex
 				case "net_gex":
 					newOptionsLines.Netgex = availableOptionsLines.Netgex
+
+				case "c_fee_m":
+					newOptionsLines.CFeeM = availableOptionsLines.CFeeM
+				case "p_fee_m":
+					newOptionsLines.PFeeM = availableOptionsLines.PFeeM
+				case "c_fee_t":
+					newOptionsLines.CFeeT = availableOptionsLines.CFeeT
+				case "p_fee_t":
+					newOptionsLines.PFeeT = availableOptionsLines.PFeeT
 				}
 			}
 
 			//сформируем данные опционов с неообходимыми линиями
 			new_options := shared.TickersDataOptions{
-				Symbol:       options[i].Symbol,
-				Series:       options[i].Series,
-				ExpiryTime:   options[i].ExpiryTime,
-				MinMarkIv:    options[i].MinMarkIv,
-				OptionsLines: newOptionsLines,
+				Symbol:        options[i].Symbol,
+				Series:        options[i].Series,
+				ExpiryTime:    options[i].ExpiryTime,
+				CallIv25Delta: options[i].CallIv25Delta,
+				PutIv25Delta:  options[i].PutIv25Delta,
+				SkewIv25Delta: options[i].SkewIv25Delta,
+				MinMarkIv:     options[i].MinMarkIv,
+				OptionsLines:  newOptionsLines,
 			}
 
 			//добавим данные опционов в общий массив
@@ -748,6 +767,7 @@ func main() {
 			Futures:    futures,
 			Options:    newOptionsArr,
 			IndexPrice: indexPrice,
+			Ts:         ts,
 		}
 
 		//дадим ответ

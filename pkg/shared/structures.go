@@ -299,6 +299,7 @@ type TikersDataMu struct {
 	Futures    []TickersDataFutures
 	Options    []TickersDataOptions
 	IndexPrice string
+	Ts         time.Time
 	sync.Mutex
 }
 
@@ -327,10 +328,15 @@ type TickersDataFutures struct {
 }
 
 type TickersDataOptions struct {
-	Symbol       string       `json:"symbol"`
-	Series       string       `json:"series"`
-	ExpiryTime   string       `json:"expiry_time"`
-	MinMarkIv    string       `json:"min_mark_iv"`
+	Symbol     string `json:"symbol"`
+	Series     string `json:"series"`
+	ExpiryTime string `json:"expiry_time"`
+
+	MinMarkIv     string `json:"min_mark_iv"`
+	CallIv25Delta string `json:"call_iv_25_delta"`
+	PutIv25Delta  string `json:"put_iv_25_delta"`
+	SkewIv25Delta string `json:"skew_iv_25_delta"` //я считаю как CallIv25Delta - PutIv25Delta
+
 	OptionsLines OptionsLines `json:"options_lines"`
 }
 
