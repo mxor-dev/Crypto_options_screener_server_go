@@ -124,8 +124,7 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 			Category: category,
 			Interval: interval,
 
-			Klines:     [][]string{},
-			LastCandle: []string{},
+			Klines: [][]string{},
 
 			Ts: time.Now(), //запишем время получения
 
@@ -144,7 +143,9 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 	}
 
 	//сохраним данные
-	KlineData.SaveKlines(klines)
+	KlineData.Lock()
+	KlineData.KlineData.Klines = klines
+	KlineData.Unlock()
 
 }
 

@@ -349,7 +349,6 @@ func main() {
 			Category     string     `json:"category"`
 			Interval     string     `json:"interval"`
 			Klines       [][]string `json:"klines"`
-			LastCandle   []string   `json:"last_candle"`
 			Ts           int64      `json:"ts"`
 		}
 
@@ -392,7 +391,6 @@ func main() {
 			Category:     "",
 			Interval:     "",
 			Klines:       [][]string{},
-			LastCandle:   []string{},
 		}
 
 		//получим ключ
@@ -438,7 +436,6 @@ func main() {
 			response.Category = KlineData.Category
 			response.Interval = KlineData.Interval
 			response.Klines = KlineData.Klines
-			response.LastCandle = KlineData.LastCandle
 			response.Ts = KlineData.Ts.UnixMilli()
 
 			//дадим ответ
@@ -458,7 +455,6 @@ func main() {
 			response.Category = KlineData.Category
 			response.Interval = KlineData.Interval
 			response.Klines = KlineData.Klines
-			response.LastCandle = KlineData.LastCandle
 			response.Ts = KlineData.Ts.UnixMilli()
 
 			//дадим ответ
@@ -535,7 +531,7 @@ func main() {
 
 		KlineDataMu.Lock()
 		//получим данные последней свечки
-		lastCandle := KlineDataMu.KlineData.LastCandle
+		lastCandle := KlineDataMu.KlineData.Klines[len(KlineDataMu.KlineData.Klines)-1]
 		ts := KlineDataMu.KlineData.Ts
 		//продлим время жизни данным
 		KlineDataMu.KlineData.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
@@ -782,7 +778,7 @@ func main() {
 			"tickers_data":  tickersResponse,
 		})
 
-		slog.Warn("Отправлены tickers_data", "url", "/api/last_candle", "req", req, "tickers_data", tickersResponse)
+		// slog.Warn("Отправлены tickers_data", "url", "/api/last_candle", "req", req, "tickers_data", tickersResponse)
 
 	})
 

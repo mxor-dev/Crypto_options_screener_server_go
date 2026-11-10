@@ -1441,7 +1441,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 
 			klineDataMu.Lock()
 			// Изменяем последнюю свечку TOHLC
-			klineDataMu.KlineData.LastCandle = []string{
+			klineDataMu.KlineData.Klines[len(klineDataMu.KlineData.Klines)-1] = []string{
 				strconv.FormatInt(klines[0].Start, 10),
 				klines[0].Open,
 				klines[0].High,
@@ -1452,6 +1452,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 			klineDataMu.KlineData.Ts = time.Now()
 			klineDataMu.Unlock()
 
+			slog.Debug("Ws пришла last_candle", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key, "klines[0]", klines[0])
 			return
 		}
 	}
