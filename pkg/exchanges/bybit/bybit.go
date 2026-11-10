@@ -713,6 +713,11 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 			list := optionsTickers.Result.List
 			// slog.Warn("Ответ", "list", list)
 
+			if len(list) == 0 {
+				slog.Error("GetTickersDataSequental: получен пустой список list от Bybit, пропускаем шаг", "ExchangeName", b.ExchangeName)
+				return
+			}
+
 			//цену индекса возьмем из первого элемента - они пои идее везде должны быть одинаковы
 			indexPrice, err := strconv.ParseFloat(list[0].IndexPrice, 64)
 			if err != nil {
