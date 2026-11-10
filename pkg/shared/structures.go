@@ -103,6 +103,8 @@ type KlineData struct {
 
 	Klines [][]string //массив формат TOHLC
 
+	LastCandle []string //одна свечка формат TOHLC
+
 	Ts time.Time
 
 	DeleteTime time.Time
@@ -183,8 +185,7 @@ func (k *KlineDataMu) GetKlineData() KlineData {
 // интервалы запроса данных
 type FetchIntervals struct {
 	RestDataGetInterval    time.Duration
-	LinearDataGetInterval  time.Duration
-	OptionsDataGetInterval time.Duration
+	TickersDataGetInterval time.Duration
 
 	KlineDeleteDeltaTime time.Duration
 

@@ -452,6 +452,8 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 	// var futuresTickers shared.FuturesTickers
 	// var OptionsTickers shared.OptionsTickers
 
+	startTime := time.Now()
+
 	//*********** Spot **************
 
 	//для каждого символа
@@ -1260,6 +1262,13 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 			slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "OptionsLen", OptionsLen)
 		}
 	}
+
+	endTime := time.Now()
+
+	//дельта по времени
+	deltaTime := endTime.Sub(startTime)
+
+	slog.Warn("Время получения данных GetTickersDataSequental", "ExchangeName", b.ExchangeName, "deltaTime(сек)", deltaTime.Seconds())
 }
 
 // вспомогательный воркер для отправики сообщений ping
@@ -1441,7 +1450,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 
 			klineDataMu.Lock()
 			// Изменяем последнюю свечку TOHLC
-			klineDataMu.KlineData.Klines[len(klineDataMu.KlineData.Klines)-1] = []string{
+			klineDataMu.KlineData.LastCandle = []string{
 				strconv.FormatInt(klines[0].Start, 10),
 				klines[0].Open,
 				klines[0].High,

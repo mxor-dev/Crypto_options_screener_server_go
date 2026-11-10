@@ -128,9 +128,8 @@ func main() {
 				// "XRP":  {Symbol: "XRP", FetchFilter: []string{"linear", "option"}},
 			},
 			FetchIntervals: shared.FetchIntervals{
-				RestDataGetInterval:    200 * time.Millisecond,
-				LinearDataGetInterval:  2 * time.Second,
-				OptionsDataGetInterval: 2 * time.Second,
+				RestDataGetInterval:    50 * time.Millisecond,
+				TickersDataGetInterval: 10 * time.Second,
 
 				// KlineDeleteDeltaTime : 30 * time.Second,
 				// KlineDeleteDeltaTime: 1 * time.Minute,
@@ -164,8 +163,7 @@ func main() {
 			AllSymbols:   map[string]*shared.SymbolData{},
 			FetchIntervals: shared.FetchIntervals{
 				RestDataGetInterval:    200 * time.Millisecond,
-				LinearDataGetInterval:  2 * time.Second,
-				OptionsDataGetInterval: 2 * time.Second,
+				TickersDataGetInterval: 10 * time.Second,
 			},
 			KlineLimit: "1000",
 		},
@@ -349,6 +347,7 @@ func main() {
 			Category     string     `json:"category"`
 			Interval     string     `json:"interval"`
 			Klines       [][]string `json:"klines"`
+			LastCandle   []string   `json:"last_candle"`
 			Ts           int64      `json:"ts"`
 		}
 
@@ -391,6 +390,7 @@ func main() {
 			Category:     "",
 			Interval:     "",
 			Klines:       [][]string{},
+			LastCandle:   []string{},
 		}
 
 		//получим ключ
@@ -455,6 +455,8 @@ func main() {
 			response.Category = KlineData.Category
 			response.Interval = KlineData.Interval
 			response.Klines = KlineData.Klines
+			response.LastCandle = KlineData.LastCandle
+
 			response.Ts = KlineData.Ts.UnixMilli()
 
 			//дадим ответ

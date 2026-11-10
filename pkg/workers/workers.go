@@ -202,14 +202,13 @@ func GetDataSequentalTimer(ctx context.Context, exchange *shared.Exchange) {
 			//получим минуты
 			minutes := now.Minute()
 
-			// на каждой 5 секунде
-			if seconds%5 == 0 {
+			// на каждой n секунде
+			if seconds%int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) == 0 {
 				//последовательно получим данные
 				exchange.Client.GetTickersDataSequental(exchange)
 			}
-
 			// на каждой 15 минуте и 10 секунде
-			if (minutes%15 == 0) && seconds == 5 {
+			if (minutes%15 == 0) && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
 
 				//для каждого символа для текущей биржи
 				for i := range exchange.AllSymbols {
@@ -240,7 +239,7 @@ func GetDataSequentalTimer(ctx context.Context, exchange *shared.Exchange) {
 				}
 			}
 			//на каждой часовой минуте и 10 секунде
-			if minutes == 0 && seconds == 5 {
+			if minutes == 0 && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
 
 				//для каждого символа для текущей биржи
 				for i := range exchange.AllSymbols {
