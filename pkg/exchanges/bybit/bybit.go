@@ -651,6 +651,12 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 		symbolInfo := exchange.AllSymbols[symbol].Info.SymbolInfo
 		exchange.AllSymbols[symbol].Info.Unlock()
 
+		//минимальный шаг опционов
+		optionsTickSize, err := strconv.ParseFloat(symbolInfo.OptionsTickSize, 64)
+		if err != nil {
+			optionsTickSize = 0.0
+		}
+
 		//если данные доступны
 		if symbolInfo.IsOptionsAvailable {
 
@@ -718,7 +724,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				return
 			}
 
-			//цену индекса возьмем из первого элемента - они пои идее везде должны быть одинаковы
+			//цену индекса возьмем из первого элемента - они пои идее везде должны быть одинаковые
 			indexPrice, err := strconv.ParseFloat(list[0].IndexPrice, 64)
 			if err != nil {
 				indexPrice = 0.0
@@ -944,15 +950,15 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						//передадим линию MarkIv
 						localOptionsLines.MarkIv[strikeIndex] = allSeriesMap[series].Calls[j].Data.MarkIv
 
-						//спарсим MarkPrice
-						markPrice, err := strconv.ParseFloat(localOptionsLines.Cmark[strikeIndex], 64)
+						//переведем аск в число
+						cAsk, err := strconv.ParseFloat(localOptionsLines.Cask[strikeIndex], 64)
 						if err != nil {
-							markPrice = 0.0
+							cAsk = optionsTickSize
 						}
 
 						// Считаем комиссию (получаем float64)
-						feeM := math.Min((float64(exchange.FeeRates.Options.MakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*markPrice)
-						feeT := math.Min((float64(exchange.FeeRates.Options.TakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*markPrice)
+						feeM := math.Min((float64(exchange.FeeRates.Options.MakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*cAsk)
+						feeT := math.Min((float64(exchange.FeeRates.Options.TakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*cAsk)
 
 						// Конвертируем float64 в string и сохраняем (в формате с плавающей точкой, авто-точность)
 						localOptionsLines.CFeeM[strikeIndex] = strconv.FormatFloat(feeM, 'f', -1, 64)
@@ -995,15 +1001,15 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 						//MarkIv не пишем
 
-						//спарсим MarkPrice
-						markPrice, err := strconv.ParseFloat(localOptionsLines.Pmark[strikeIndex], 64)
+						//спарсим pAsk
+						pAsk, err := strconv.ParseFloat(localOptionsLines.Cask[strikeIndex], 64)
 						if err != nil {
-							markPrice = 0.0
+							pAsk = optionsTickSize
 						}
 
 						// Считаем комиссию (получаем float64)
-						feeM := math.Min((float64(exchange.FeeRates.Options.MakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*markPrice)
-						feeT := math.Min((float64(exchange.FeeRates.Options.TakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*markPrice)
+						feeM := math.Min((float64(exchange.FeeRates.Options.MakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*pAsk)
+						feeT := math.Min((float64(exchange.FeeRates.Options.TakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*pAsk)
 
 						// Конвертируем float64 в string и сохраняем (в формате с плавающей точкой, авто-точность)
 						localOptionsLines.PFeeM[strikeIndex] = strconv.FormatFloat(feeM, 'f', -1, 64)
