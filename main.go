@@ -436,6 +436,7 @@ func main() {
 			response.Category = KlineData.Category
 			response.Interval = KlineData.Interval
 			response.Klines = KlineData.Klines
+			response.LastCandle = KlineData.LastCandle
 			response.Ts = KlineData.Ts.UnixMilli()
 
 			//дадим ответ
