@@ -246,6 +246,8 @@ type TickersDataOptions struct {
 	Series     string `json:"series"`
 	ExpiryTime string `json:"expiry_time"`
 
+	UnderlyingPrice     string `json:"underlying_price"`// Форвардная цена базового актива (для Bybit — синтетика серии, для MOEX — цена базового фьючерса / расчётный форвард)
+
 	MinMarkIv             [2]string `json:"min_mark_iv"`
 	NearestIvToIndexPrice [2]string `json:"nearest_iv_to_index_price"`
 

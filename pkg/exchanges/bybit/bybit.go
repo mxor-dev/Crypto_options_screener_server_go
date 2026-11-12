@@ -828,7 +828,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				}
 
 				// Приводим "05NOV26" к "05Nov26" для корректного парсинга шаблоном Go
-				formattedSeries := strings.ToUpper(series[:2]) + strings.Title(strings.ToLower(series[2:5])) + series[5:]
+				formattedSeries := series[:2] + strings.ToUpper(series[2:3]) + strings.ToLower(series[3:5]) + series[5:]
 
 				// Парсим дату по шаблону DDMMMYY
 				parsedDate, err := time.Parse("02Jan06", formattedSeries)
@@ -845,6 +845,10 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 				//если серия опционов действующая
 				if time.Now().Before(expiryTime) {
+
+					//цена форварда возьмем по первому колу
+					underlyingPrice := allSeriesMap[series].Calls[0].Data.UnderlyingPrice
+
 					//массив трайков
 					var allStrikes []string
 
@@ -1228,9 +1232,10 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 					//заполним данные для текущей серии опционов
 					localOptionsTickers := shared.TickersDataOptions{
-						Symbol:     symbol,
-						Series:     series,
-						ExpiryTime: strconv.FormatInt(expiryTime.UnixMilli(), 10),
+						Symbol:          symbol,
+						Series:          series,
+						UnderlyingPrice: underlyingPrice,
+						ExpiryTime:      strconv.FormatInt(expiryTime.UnixMilli(), 10),
 
 						MinMarkIv:             minMarkIvStr,
 						NearestIvToIndexPrice: nearestIvToIndexPrice,
