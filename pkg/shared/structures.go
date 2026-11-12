@@ -222,19 +222,23 @@ type TickersDataSpot struct {
 }
 
 type TickersDataPerpetual struct {
-	Symbol   string `json:"symbol"`
-	BidPrice string `json:"bid_price"`
-	BidSize  string `json:"bid_size"`
-	AskPrice string `json:"ask_price"`
-	AskSize  string `json:"ask_size"`
+	Symbol          string `json:"symbol"`
+	BidPrice        string `json:"bid_price"`
+	BidSize         string `json:"bid_size"`
+	AskPrice        string `json:"ask_price"`
+	AskSize         string `json:"ask_size"`
+	FundingRate     string `json:"funding_rate"`
+	NextFundingTime string `json:"next_funding_time"`
 }
 
 type TickersDataFutures struct {
-	Symbol   string `json:"symbol"`
-	BidPrice string `json:"bid_price"`
-	BidSize  string `json:"bid_size"`
-	AskPrice string `json:"ask_price"`
-	AskSize  string `json:"ask_size"`
+	Symbol        string `json:"symbol"`
+	BidPrice      string `json:"bid_price"`
+	BidSize       string `json:"bid_size"`
+	AskPrice      string `json:"ask_price"`
+	AskSize       string `json:"ask_size"`
+	BasisRateYear string `json:"basis_rate_year"`
+	DeliveryTime  string `json:"delivery_time"`
 }
 
 type TickersDataOptions struct {

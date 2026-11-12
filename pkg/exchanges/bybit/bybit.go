@@ -556,11 +556,15 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				Result struct {
 					Category string `json:"category"`
 					List     []struct {
-						Symbol   string `json:"symbol"`
-						BidPrice string `json:"bid1Price"` // Лучшая цена покупки (лучший Bid)
-						BidSize  string `json:"bid1Size"`  // Объём лучшей покупки (Bid Size)
-						AskPrice string `json:"ask1Price"` // Лучшая цена продажи (лучший Ask)
-						AskSize  string `json:"ask1Size"`  // Объём лучшей продажи (Ask Size)
+						Symbol          string `json:"symbol"`
+						BidPrice        string `json:"bid1Price"`       // Лучшая цена покупки (лучший Bid)
+						BidSize         string `json:"bid1Size"`        // Объём лучшей покупки (Bid Size)
+						AskPrice        string `json:"ask1Price"`       // Лучшая цена продажи (лучший Ask)
+						AskSize         string `json:"ask1Size"`        // Объём лучшей продажи (Ask Size)
+						FundingRate     string `json:"fundingRate"`     // Текущая ставка фандинга (только для перпов)
+						NextFundingTime string `json:"nextFundingTime"` // Время следующей выплаты фандинга (мс)
+						BasisRateYear   string `json:"basisRateYear"`   // Годовой базис (только для срочных фьючерсов)
+						DeliveryTime    string `json:"deliveryTime"`    // Время экспирации контракта (мс; "0" для перпов)
 					} `json:"list"`
 				} `json:"result"`
 			}
@@ -599,11 +603,13 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						//сохраним данные
 						exchange.AllSymbols[symbol].TikersData.Lock()
 						exchange.AllSymbols[symbol].TikersData.Perpetual = shared.TickersDataPerpetual{
-							Symbol:   list[i].Symbol,
-							BidPrice: list[i].BidPrice,
-							BidSize:  list[i].BidSize,
-							AskPrice: list[i].AskPrice,
-							AskSize:  list[i].AskSize,
+							Symbol:          list[i].Symbol,
+							BidPrice:        list[i].BidPrice,
+							BidSize:         list[i].BidSize,
+							AskPrice:        list[i].AskPrice,
+							AskSize:         list[i].AskSize,
+							FundingRate:     list[i].FundingRate,
+							NextFundingTime: list[i].NextFundingTime,
 						}
 						exchange.AllSymbols[symbol].TikersData.Unlock()
 
@@ -614,11 +620,13 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 						//создадим локальные данные
 						localTickers := shared.TickersDataFutures{
-							Symbol:   list[i].Symbol,
-							BidPrice: list[i].BidPrice,
-							BidSize:  list[i].BidSize,
-							AskPrice: list[i].AskPrice,
-							AskSize:  list[i].AskSize,
+							Symbol:        list[i].Symbol,
+							BidPrice:      list[i].BidPrice,
+							BidSize:       list[i].BidSize,
+							AskPrice:      list[i].AskPrice,
+							AskSize:       list[i].AskSize,
+							BasisRateYear: list[i].BasisRateYear,
+							DeliveryTime:  list[i].DeliveryTime,
 						}
 
 						localFuturesTickersArr = append(localFuturesTickersArr, localTickers)
