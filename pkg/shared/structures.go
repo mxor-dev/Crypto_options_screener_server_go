@@ -63,23 +63,27 @@ type SymbolInfo struct {
 	SpotContractName   string `json:"spot_contract_name"`
 	SpotContractSize   string `json:"spot_contract_size"`
 	SpotMinOrderQty    string `json:"spot_min_order_qty"`
+	SpotQtyPrecision   string `json:"spot_qty_precision"`
 	SpotTickSize       string `json:"spot_tick_size"`
 	SpotPricePrecision string `json:"spot_price_precision"`
 
 	PerpetualContractName   string `json:"perpetual_contract_name"`
 	PerpetualContractSize   string `json:"perpetual_contract_size"`
 	PerpetualMinOrderQty    string `json:"perpetual_min_order_qty"`
+	PerpetualQtyPrecision   string `json:"perpetual_qty_precision"`
 	PerpetualTickSize       string `json:"perpetual_tick_size"`
 	PerpetualPricePrecision string `json:"perpetual_price_precision"`
 
 	FuturesContractNameArr []string `json:"futures_contract_name_arr"`
 	FuturesContractSize    string   `json:"futures_contract_size"`
 	FuturesMinOrderQty     string   `json:"futures_min_order_qty"`
+	FuturesQtyPrecision    string   `json:"futures_qty_precision"`
 	FuturesTickSize        string   `json:"futures_tick_size"`
 	FuturesPricePrecision  string   `json:"futures_price_precision"`
 
 	OptionsContractSize   string `json:"options_contract_size"`
 	OptionsMinOrderQty    string `json:"options_min_order_qty"`
+	OptionsQtyPrecision   string `json:"options_qty_precision"`
 	OptionsTickSize       string `json:"options_tick_size"`
 	OptionsPricePrecision string `json:"options_price_precision"`
 

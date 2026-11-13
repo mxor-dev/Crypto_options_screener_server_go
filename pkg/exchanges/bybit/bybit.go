@@ -142,24 +142,28 @@ func (b *BybitClient) GetSymbolInfo(symbol string, RestDataGetInterval time.Dura
 		SpotContractName:   "",
 		SpotContractSize:   "1",
 		SpotMinOrderQty:    "",
+		SpotQtyPrecision:   "",
 		SpotTickSize:       "",
 		SpotPricePrecision: "",
 
 		PerpetualContractName:   "",
 		PerpetualContractSize:   "1",
 		PerpetualMinOrderQty:    "",
+		PerpetualQtyPrecision:   "",
 		PerpetualTickSize:       "",
 		PerpetualPricePrecision: "",
 
 		FuturesContractNameArr: []string{},
 		FuturesContractSize:    "1",
 		FuturesMinOrderQty:     "",
+		FuturesQtyPrecision:    "",
 		FuturesTickSize:        "",
 		FuturesPricePrecision:  "",
 
 		// OptionContractNameArr: []string{},
 		OptionsContractSize:   "1",
 		OptionsMinOrderQty:    "",
+		OptionsQtyPrecision:   "",
 		OptionsTickSize:       "",
 		OptionsPricePrecision: "",
 
@@ -214,6 +218,8 @@ func (b *BybitClient) GetSymbolInfo(symbol string, RestDataGetInterval time.Dura
 
 		//найдем точность цены
 		result.SpotPricePrecision = convert.GetPrecisionFromString(result.SpotTickSize)
+		//найдем точность qty
+		result.SpotQtyPrecision = convert.GetPrecisionFromString(result.SpotMinOrderQty)
 
 		//льметим что нашли спот
 		result.IsSpotAvailable = true
@@ -266,6 +272,8 @@ func (b *BybitClient) GetSymbolInfo(symbol string, RestDataGetInterval time.Dura
 
 				//найдем точность цены
 				result.PerpetualPricePrecision = convert.GetPrecisionFromString(result.PerpetualTickSize)
+				//найдем точность qty
+				result.PerpetualQtyPrecision = convert.GetPrecisionFromString(result.PerpetualMinOrderQty)
 
 				//отметим что данные найдены
 				result.IsPerpetualAvailable = true
@@ -281,6 +289,8 @@ func (b *BybitClient) GetSymbolInfo(symbol string, RestDataGetInterval time.Dura
 
 					//найдем точность цены
 					result.FuturesPricePrecision = convert.GetPrecisionFromString(result.PerpetualTickSize)
+					//найдем точность qty
+					result.FuturesQtyPrecision = convert.GetPrecisionFromString(result.FuturesMinOrderQty)
 
 					//отметим что данные найдены
 					result.IsFuturesAvailable = true
@@ -352,6 +362,8 @@ func (b *BybitClient) GetSymbolInfo(symbol string, RestDataGetInterval time.Dura
 
 		//найдем точность цены
 		result.OptionsPricePrecision = convert.GetPrecisionFromString(result.OptionsTickSize)
+		//найдем точность qty
+		result.OptionsQtyPrecision = convert.GetPrecisionFromString(result.OptionsMinOrderQty)
 
 		//отметим что данные найдены
 		result.IsOptionsAvailable = true
@@ -603,14 +615,14 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				//для каждого элемента списка
 				for i := range list {
 
-					//если цена индекса не определена
-					if indexPrice == "" {
-						indexPrice = list[i].IndexPrice
-					}
-
 					//если это фьючерс perpetual
 					if list[i].Symbol == symbol+"USDT" {
 						// slog.Warn("Perpetual найден")
+
+						//если цена индекса не определена
+						if indexPrice == "" {
+							indexPrice = list[i].IndexPrice
+						}
 
 						//сохраним данные
 						exchange.AllSymbols[symbol].TikersData.Lock()
