@@ -202,6 +202,9 @@ func main() {
 
 	}
 
+	//пользователь по умолчанию
+	defaultUser := shared.NewUserData(allExchanges, "0", "default", "regular_user")
+
 	//****** ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ *********************************************************************
 
 	//для каждой биржи
@@ -290,6 +293,13 @@ func main() {
 	//главная страница
 	r.GET("/ping", func(c *gin.Context) {
 		c.String(200, "ok")
+	})
+	//информация по всем биржам и симолам
+	r.GET("/api/user_data", func(c *gin.Context) {
+
+		slog.Debug("Получен запрос GET", "url", "/api/user_data")
+
+		c.JSON(200, defaultUser)
 	})
 	//информация по всем биржам и симолам
 	r.GET("/api/all_exchnges_info", func(c *gin.Context) {
