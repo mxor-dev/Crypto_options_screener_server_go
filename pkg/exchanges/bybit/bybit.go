@@ -140,21 +140,25 @@ func (b *BybitClient) GetSymbolInfo(symbol string, RestDataGetInterval time.Dura
 		Symbol:       symbol,
 
 		SpotContractName:   "",
+		SpotContractSize:   "1",
 		SpotMinOrderQty:    "",
 		SpotTickSize:       "",
 		SpotPricePrecision: "",
 
 		PerpetualContractName:   "",
+		PerpetualContractSize:   "1",
 		PerpetualMinOrderQty:    "",
 		PerpetualTickSize:       "",
 		PerpetualPricePrecision: "",
 
 		FuturesContractNameArr: []string{},
+		FuturesContractSize:    "1",
 		FuturesMinOrderQty:     "",
 		FuturesTickSize:        "",
 		FuturesPricePrecision:  "",
 
 		// OptionContractNameArr: []string{},
+		OptionsContractSize:   "1",
 		OptionsMinOrderQty:    "",
 		OptionsTickSize:       "",
 		OptionsPricePrecision: "",
