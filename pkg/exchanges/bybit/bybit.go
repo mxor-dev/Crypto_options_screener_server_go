@@ -534,6 +534,8 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 	for symbol := range exchange.AllSymbols {
 
+		var indexPrice string
+
 		//получим информацию по символу
 		exchange.AllSymbols[symbol].Info.Lock()
 		symbolInfo := exchange.AllSymbols[symbol].Info.SymbolInfo
@@ -561,6 +563,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 					Category string `json:"category"`
 					List     []struct {
 						Symbol          string `json:"symbol"`
+						IndexPrice      string `json:"indexPrice"`      // Индексная цена базового актива (спотовый индекс)
 						BidPrice        string `json:"bid1Price"`       // Лучшая цена покупки (лучший Bid)
 						BidSize         string `json:"bid1Size"`        // Объём лучшей покупки (Bid Size)
 						AskPrice        string `json:"ask1Price"`       // Лучшая цена продажи (лучший Ask)
@@ -599,6 +602,11 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 				//для каждого элемента списка
 				for i := range list {
+
+					//если цена индекса не определена
+					if indexPrice == "" {
+						indexPrice = list[i].IndexPrice
+					}
 
 					//если это фьючерс perpetual
 					if list[i].Symbol == symbol+"USDT" {
@@ -640,6 +648,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				//если найдены фьючерсы
 				if len(localFuturesTickersArr) > 0 {
 					exchange.AllSymbols[symbol].TikersData.Lock()
+					exchange.AllSymbols[symbol].TikersData.IndexPrice = indexPrice
 					exchange.AllSymbols[symbol].TikersData.Futures = localFuturesTickersArr
 					exchange.AllSymbols[symbol].TikersData.Unlock()
 
@@ -736,10 +745,10 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				return
 			}
 
-			//цену индекса возьмем из первого элемента - они пои идее везде должны быть одинаковые
+			//получим цену индекса для расчетов числом из данных первого опциона
 			indexPrice, err := strconv.ParseFloat(list[0].IndexPrice, 64)
 			if err != nil {
-				indexPrice = 0.0
+				indexPrice = 0
 			}
 
 			// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "rawOptionsData", rawOptionsData)
@@ -1281,7 +1290,6 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 			//запишем полученные данные
 			exchange.AllSymbols[symbol].TikersData.Lock()
 			exchange.AllSymbols[symbol].TikersData.Options = localAllOptionsTickers
-			exchange.AllSymbols[symbol].TikersData.IndexPrice = strconv.FormatFloat(indexPrice, 'f', 4, 64)
 			exchange.AllSymbols[symbol].TikersData.Ts = time.Now()
 			OptionsLen := len(exchange.AllSymbols[symbol].TikersData.Options)
 			// slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].Tikers.Options)
