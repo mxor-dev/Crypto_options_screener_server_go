@@ -1277,10 +1277,10 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 					//заполним данные для текущей серии опционов
 					localOptionsTickers := shared.TickersDataOptions{
-						Symbol:          symbol,
-						Series:          series,
-						UnderlyingPrice: underlyingPrice,
-						ExpiryTime:      strconv.FormatInt(expiryTime.UnixMilli(), 10),
+						Symbol:       symbol,
+						Series:       series,
+						ForwardPrice: underlyingPrice,
+						ExpiryTime:   strconv.FormatInt(expiryTime.UnixMilli(), 10),
 
 						MinMarkIv:             minMarkIvStr,
 						NearestIvToIndexPrice: nearestIvToIndexPrice,
