@@ -203,7 +203,7 @@ func main() {
 	}
 
 	//пользователь по умолчанию
-	defaultUser := shared.NewUserData(allExchanges, "0", "default", "regular_user")
+	defaultUser := shared.NewUserData(allExchanges, "id:0", "default", "regular_user")
 
 	//****** ПОЛУЧЕНИЕ И ОБРАБОТКА ДАННЫХ СО ВСЕХ БИРЖ *********************************************************************
 

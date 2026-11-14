@@ -500,11 +500,12 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				Result struct {
 					Category string `json:"category"`
 					List     []struct {
-						Symbol   string `json:"symbol"`
-						BidPrice string `json:"bid1Price"` // Лучшая цена покупки (лучший Bid)
-						BidSize  string `json:"bid1Size"`  // Объём лучшей покупки (Bid Size)
-						AskPrice string `json:"ask1Price"` // Лучшая цена продажи (лучший Ask)
-						AskSize  string `json:"ask1Size"`  // Объём лучшей продажи (Ask Size)
+						Symbol    string `json:"symbol"`
+						BidPrice  string `json:"bid1Price"` // Лучшая цена покупки (лучший Bid)
+						BidSize   string `json:"bid1Size"`  // Объём лучшей покупки (Bid Size)
+						AskPrice  string `json:"ask1Price"` // Лучшая цена продажи (лучший Ask)
+						AskSize   string `json:"ask1Size"`  // Объём лучшей продажи (Ask Size)
+						LastPrice string `json:"lastPrice"` // Цена последней сделки
 					} `json:"list"`
 				} `json:"result"`
 			}
@@ -525,11 +526,12 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				//сохраним данные
 				exchange.AllSymbols[symbol].TikersData.Lock()
 				exchange.AllSymbols[symbol].TikersData.Spot = shared.TickersDataSpot{
-					Symbol:   list[0].Symbol,
-					BidPrice: list[0].BidPrice,
-					BidSize:  list[0].BidSize,
-					AskPrice: list[0].AskPrice,
-					AskSize:  list[0].AskSize,
+					Symbol:    list[0].Symbol,
+					BidPrice:  list[0].BidPrice,
+					BidSize:   list[0].BidSize,
+					AskPrice:  list[0].AskPrice,
+					AskSize:   list[0].AskSize,
+					LastPrice: list[0].LastPrice,
 				}
 				exchange.AllSymbols[symbol].TikersData.Unlock()
 
@@ -580,6 +582,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						BidSize         string `json:"bid1Size"`        // Объём лучшей покупки (Bid Size)
 						AskPrice        string `json:"ask1Price"`       // Лучшая цена продажи (лучший Ask)
 						AskSize         string `json:"ask1Size"`        // Объём лучшей продажи (Ask Size)
+						MarkPrice       string `json:"markPrice"`       // Цена маркировки
 						FundingRate     string `json:"fundingRate"`     // Текущая ставка фандинга (только для перпов)
 						NextFundingTime string `json:"nextFundingTime"` // Время следующей выплаты фандинга (мс)
 						BasisRateYear   string `json:"basisRateYear"`   // Годовой базис (только для срочных фьючерсов)
@@ -632,6 +635,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 							BidSize:         list[i].BidSize,
 							AskPrice:        list[i].AskPrice,
 							AskSize:         list[i].AskSize,
+							MarkPrice:       list[i].MarkPrice,
 							FundingRate:     list[i].FundingRate,
 							NextFundingTime: list[i].NextFundingTime,
 						}
@@ -649,6 +653,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 							BidSize:       list[i].BidSize,
 							AskPrice:      list[i].AskPrice,
 							AskSize:       list[i].AskSize,
+							MarkPrice:     list[i].MarkPrice,
 							BasisRateYear: list[i].BasisRateYear,
 							DeliveryTime:  list[i].DeliveryTime,
 						}

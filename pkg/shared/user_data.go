@@ -1,11 +1,10 @@
 package shared
 
 type UserData struct {
-	Id   string
-	Name string
-	Role string
-
-	FeeRates map[string]FeeRates
+	Id       string              `json:"id"`
+	Name     string              `json:"name"`
+	Role     string              `json:"role"`
+	FeeRates map[string]FeeRates `json:"fee_rates"`
 }
 
 // создает и инициализирует нового пользователя
