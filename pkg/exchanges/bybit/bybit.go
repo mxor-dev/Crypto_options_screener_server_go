@@ -622,6 +622,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 					if list[i].Symbol == symbol+"USDT" {
 						// slog.Warn("Perpetual найден")
 
+						// slog.Error("ЦЕНА ИНДЕКСА", "symbol", symbol, "list[i].IndexPrice", list[i].IndexPrice)
 						//если цена индекса не определена
 						if indexPrice == "" {
 							indexPrice = list[i].IndexPrice
@@ -646,6 +647,11 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 					if slices.Contains(FuturesContractNameArr, list[i].Symbol) {
 						// slog.Warn("futures найден")
 
+						//если цена индекса не определена
+						if indexPrice == "" {
+							indexPrice = list[i].IndexPrice
+						}
+
 						//создадим локальные данные
 						localTickers := shared.TickersDataFutures{
 							Symbol:        list[i].Symbol,
@@ -663,13 +669,22 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				}
 
 				//если найдены фьючерсы
-				if len(localFuturesTickersArr) > 0 {
-					exchange.AllSymbols[symbol].TikersData.Lock()
-					exchange.AllSymbols[symbol].TikersData.IndexPrice = indexPrice
-					exchange.AllSymbols[symbol].TikersData.Futures = localFuturesTickersArr
-					exchange.AllSymbols[symbol].TikersData.Unlock()
+				// if len(localFuturesTickersArr) > 0 {
+				// 	exchange.AllSymbols[symbol].TikersData.Lock()
+				// 	exchange.AllSymbols[symbol].TikersData.IndexPrice = indexPrice
+				// 	exchange.AllSymbols[symbol].TikersData.Futures = localFuturesTickersArr
+				// 	exchange.AllSymbols[symbol].TikersData.Unlock()
 
+				// }
+
+				//запишем найденный indexPrice (Он может быть найден или в perpetual или во futures) и данные futures
+				exchange.AllSymbols[symbol].TikersData.Lock()
+				exchange.AllSymbols[symbol].TikersData.IndexPrice = indexPrice
+				//если найдены фьючерсы
+				if len(localFuturesTickersArr) > 0 {
+					exchange.AllSymbols[symbol].TikersData.Futures = localFuturesTickersArr
 				}
+				exchange.AllSymbols[symbol].TikersData.Unlock()
 
 				slog.Info("Получены данные linearTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol, "category", "linear")
 			}
