@@ -740,29 +740,29 @@ func main() {
 				case "mark_iv":
 					newOptionsLines.MarkIv = availableOptionsLines.MarkIv
 
-				// case "c_gex":
-				// 	// newOptionsLines.Cgex = availableOptionsLines.Cgex
-				// 	newOptionsLines.Coi = availableOptionsLines.Coi
-				// 	newOptionsLines.Cgamma = availableOptionsLines.Cgamma
-				// case "p_gex":
-				// 	// newOptionsLines.Pgex = availableOptionsLines.Pgex
-				// 	newOptionsLines.Coi = availableOptionsLines.Coi
-				// 	newOptionsLines.Pgamma = availableOptionsLines.Pgamma
-				// case "net_gex":
-				// 	// newOptionsLines.Netgex = availableOptionsLines.Netgex
-				// 	newOptionsLines.Coi = availableOptionsLines.Coi
-				// 	newOptionsLines.Cgamma = availableOptionsLines.Cgamma
-				// 	newOptionsLines.Coi = availableOptionsLines.Coi
-				// 	newOptionsLines.Pgamma = availableOptionsLines.Pgamma
+					// case "c_gex":
+					// 	// newOptionsLines.Cgex = availableOptionsLines.Cgex
+					// 	newOptionsLines.Coi = availableOptionsLines.Coi
+					// 	newOptionsLines.Cgamma = availableOptionsLines.Cgamma
+					// case "p_gex":
+					// 	// newOptionsLines.Pgex = availableOptionsLines.Pgex
+					// 	newOptionsLines.Coi = availableOptionsLines.Coi
+					// 	newOptionsLines.Pgamma = availableOptionsLines.Pgamma
+					// case "net_gex":
+					// 	// newOptionsLines.Netgex = availableOptionsLines.Netgex
+					// 	newOptionsLines.Coi = availableOptionsLines.Coi
+					// 	newOptionsLines.Cgamma = availableOptionsLines.Cgamma
+					// 	newOptionsLines.Coi = availableOptionsLines.Coi
+					// 	newOptionsLines.Pgamma = availableOptionsLines.Pgamma
 
-				// case "c_fee_m":
-				// 	// newOptionsLines.CFeeM = availableOptionsLines.CFeeM
-				// case "p_fee_m":
-				// 	// newOptionsLines.PFeeM = availableOptionsLines.PFeeM
-				// case "c_fee_t":
-				// 	// newOptionsLines.CFeeT = availableOptionsLines.CFeeT
-				// case "p_fee_t":
-				// 	// newOptionsLines.PFeeT = availableOptionsLines.PFeeT
+					// case "c_fee_m":
+					// 	// newOptionsLines.CFeeM = availableOptionsLines.CFeeM
+					// case "p_fee_m":
+					// 	// newOptionsLines.PFeeM = availableOptionsLines.PFeeM
+					// case "c_fee_t":
+					// 	// newOptionsLines.CFeeT = availableOptionsLines.CFeeT
+					// case "p_fee_t":
+					// 	// newOptionsLines.PFeeT = availableOptionsLines.PFeeT
 				}
 			}
 
@@ -771,6 +771,8 @@ func main() {
 				Symbol:     options[i].Symbol,
 				Series:     options[i].Series,
 				ExpiryTime: options[i].ExpiryTime,
+
+				ForwardPrice: options[i].ForwardPrice,
 
 				MinMarkIv:             options[i].MinMarkIv,
 				NearestIvToIndexPrice: options[i].NearestIvToIndexPrice,

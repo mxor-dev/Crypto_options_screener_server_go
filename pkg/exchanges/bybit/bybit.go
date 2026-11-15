@@ -891,8 +891,15 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				//если серия опционов действующая
 				if time.Now().Before(expiryTime) {
 
-					//цена форварда возьмем по первому колу
-					underlyingPrice := allSeriesMap[series].Calls[0].Data.UnderlyingPrice
+					var underlyingPrice string
+
+					//если цена форварда не определена
+					if underlyingPrice == "" {
+						//цена форварда возьмем по первому колу
+						underlyingPrice = allSeriesMap[series].Calls[0].Data.UnderlyingPrice
+
+						// slog.Error("Цена форварда", "underlyingPrice", underlyingPrice)
+					}
 
 					//массив трайков
 					var allStrikes []string
@@ -1324,7 +1331,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 			exchange.AllSymbols[symbol].TikersData.Options = localAllOptionsTickers
 			exchange.AllSymbols[symbol].TikersData.Ts = time.Now()
 			OptionsLen := len(exchange.AllSymbols[symbol].TikersData.Options)
-			// slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].Tikers.Options)
+			// slog.Error("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].TikersData.Options)
 			exchange.AllSymbols[symbol].TikersData.Unlock()
 
 			slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "OptionsLen", OptionsLen)
