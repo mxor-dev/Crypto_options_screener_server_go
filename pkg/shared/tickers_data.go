@@ -77,8 +77,8 @@ type OptionsLines struct {
 	Cbid  []string `json:"c_bid"`
 	Pbid  []string `json:"p_bid"`
 
-	Cspread []string `json:"c_spread"`
-	Pspread []string `json:"p_spread"`
+	// Cspread []string `json:"c_spread"`
+	// Pspread []string `json:"p_spread"`
 
 	Cdelta []string `json:"c_delta"`
 	Pdelta []string `json:"p_delta"`
@@ -102,12 +102,12 @@ type OptionsLines struct {
 	PbidIv []string `json:"p_bid_iv"`
 	MarkIv []string `json:"mark_iv"`
 
-	Cgex   []string `json:"c_gex"`
-	Pgex   []string `json:"p_gex"`
-	Netgex []string `json:"net_gex"`
+	// Cgex   []string `json:"c_gex"`
+	// Pgex   []string `json:"p_gex"`
+	// Netgex []string `json:"net_gex"`
 
-	CFeeM []string `json:"c_fee_m"`
-	PFeeM []string `json:"p_fee_m"`
-	CFeeT []string `json:"c_fee_t"`
-	PFeeT []string `json:"p_fee_t"`
+	// CFeeM []string `json:"c_fee_m"`
+	// PFeeM []string `json:"p_fee_m"`
+	// CFeeT []string `json:"c_fee_t"`
+	// PFeeT []string `json:"p_fee_t"`
 }

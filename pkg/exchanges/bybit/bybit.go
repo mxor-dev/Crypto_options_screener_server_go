@@ -705,10 +705,10 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 		exchange.AllSymbols[symbol].Info.Unlock()
 
 		//минимальный шаг опционов
-		optionsTickSize, err := strconv.ParseFloat(symbolInfo.OptionsTickSize, 64)
-		if err != nil {
-			optionsTickSize = 0.0
-		}
+		// optionsTickSize, err := strconv.ParseFloat(symbolInfo.OptionsTickSize, 64)
+		// if err != nil {
+		// 	optionsTickSize = 0.0
+		// }
 
 		//если данные доступны
 		if symbolInfo.IsOptionsAvailable {
@@ -932,8 +932,8 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						Cbid:  make([]string, lenAllStrikes),
 						Pbid:  make([]string, lenAllStrikes),
 
-						Cspread: make([]string, lenAllStrikes),
-						Pspread: make([]string, lenAllStrikes),
+						// Cspread: make([]string, lenAllStrikes),
+						// Pspread: make([]string, lenAllStrikes),
 
 						Cdelta: make([]string, lenAllStrikes),
 						Pdelta: make([]string, lenAllStrikes),
@@ -957,14 +957,14 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						PbidIv: make([]string, lenAllStrikes),
 						MarkIv: make([]string, lenAllStrikes),
 
-						Cgex:   make([]string, lenAllStrikes),
-						Pgex:   make([]string, lenAllStrikes),
-						Netgex: make([]string, lenAllStrikes),
+						// Cgex:   make([]string, lenAllStrikes),
+						// Pgex:   make([]string, lenAllStrikes),
+						// Netgex: make([]string, lenAllStrikes),
 
-						CFeeM: make([]string, lenAllStrikes),
-						PFeeM: make([]string, lenAllStrikes),
-						CFeeT: make([]string, lenAllStrikes),
-						PFeeT: make([]string, lenAllStrikes),
+						// CFeeM: make([]string, lenAllStrikes),
+						// PFeeM: make([]string, lenAllStrikes),
+						// CFeeT: make([]string, lenAllStrikes),
+						// PFeeT: make([]string, lenAllStrikes),
 					}
 
 					//передадим страйки
@@ -1008,18 +1008,18 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						localOptionsLines.MarkIv[strikeIndex] = allSeriesMap[series].Calls[j].Data.MarkIv
 
 						//переведем аск в число
-						cAsk, err := strconv.ParseFloat(localOptionsLines.Cask[strikeIndex], 64)
-						if err != nil {
-							cAsk = optionsTickSize
-						}
+						// cAsk, err := strconv.ParseFloat(localOptionsLines.Cask[strikeIndex], 64)
+						// if err != nil {
+						// 	cAsk = optionsTickSize
+						// }
 
-						// Считаем комиссию (получаем float64)
-						feeM := math.Min((float64(exchange.FeeRates.Options.MakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*cAsk)
-						feeT := math.Min((float64(exchange.FeeRates.Options.TakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*cAsk)
+						// // Считаем комиссию (получаем float64)
+						// feeM := math.Min((float64(exchange.FeeRates.Options.MakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*cAsk)
+						// feeT := math.Min((float64(exchange.FeeRates.Options.TakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*cAsk)
 
-						// Конвертируем float64 в string и сохраняем (в формате с плавающей точкой, авто-точность)
-						localOptionsLines.CFeeM[strikeIndex] = strconv.FormatFloat(feeM, 'f', -1, 64)
-						localOptionsLines.CFeeT[strikeIndex] = strconv.FormatFloat(feeT, 'f', -1, 64)
+						// // Конвертируем float64 в string и сохраняем (в формате с плавающей точкой, авто-точность)
+						// localOptionsLines.CFeeM[strikeIndex] = strconv.FormatFloat(feeM, 'f', -1, 64)
+						// localOptionsLines.CFeeT[strikeIndex] = strconv.FormatFloat(feeT, 'f', -1, 64)
 
 					}
 
@@ -1059,18 +1059,18 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						//MarkIv не пишем
 
 						//спарсим pAsk
-						pAsk, err := strconv.ParseFloat(localOptionsLines.Cask[strikeIndex], 64)
-						if err != nil {
-							pAsk = optionsTickSize
-						}
+						// pAsk, err := strconv.ParseFloat(localOptionsLines.Cask[strikeIndex], 64)
+						// if err != nil {
+						// 	pAsk = optionsTickSize
+						// }
 
-						// Считаем комиссию (получаем float64)
-						feeM := math.Min((float64(exchange.FeeRates.Options.MakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*pAsk)
-						feeT := math.Min((float64(exchange.FeeRates.Options.TakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*pAsk)
+						// // Считаем комиссию (получаем float64)
+						// feeM := math.Min((float64(exchange.FeeRates.Options.MakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*pAsk)
+						// feeT := math.Min((float64(exchange.FeeRates.Options.TakerFeeRate)/100)*indexPrice, (float64(exchange.FeeRates.Options.MaxPartRate)/100)*pAsk)
 
-						// Конвертируем float64 в string и сохраняем (в формате с плавающей точкой, авто-точность)
-						localOptionsLines.PFeeM[strikeIndex] = strconv.FormatFloat(feeM, 'f', -1, 64)
-						localOptionsLines.PFeeT[strikeIndex] = strconv.FormatFloat(feeT, 'f', -1, 64)
+						// // Конвертируем float64 в string и сохраняем (в формате с плавающей точкой, авто-точность)
+						// localOptionsLines.PFeeM[strikeIndex] = strconv.FormatFloat(feeM, 'f', -1, 64)
+						// localOptionsLines.PFeeT[strikeIndex] = strconv.FormatFloat(feeT, 'f', -1, 64)
 
 					}
 
@@ -1215,65 +1215,65 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 					}
 
 					//получим gex
-					for j := range localOptionsLines.Strikes {
-						// Парсим Call OI и Call Gamma
-						cOi, err := strconv.ParseFloat(localOptionsLines.Coi[j], 64)
-						if err != nil {
-							cOi = 0.0
-						}
-						cGamma, err := strconv.ParseFloat(localOptionsLines.Cgamma[j], 64)
-						if err != nil {
-							cGamma = 0.0
-						}
+					// for j := range localOptionsLines.Strikes {
+					// 	// Парсим Call OI и Call Gamma
+					// 	cOi, err := strconv.ParseFloat(localOptionsLines.Coi[j], 64)
+					// 	if err != nil {
+					// 		cOi = 0.0
+					// 	}
+					// 	cGamma, err := strconv.ParseFloat(localOptionsLines.Cgamma[j], 64)
+					// 	if err != nil {
+					// 		cGamma = 0.0
+					// 	}
 
-						// Парсим Put OI и Put Gamma
-						pOi, err := strconv.ParseFloat(localOptionsLines.Poi[j], 64)
-						if err != nil {
-							pOi = 0.0
-						}
-						pGamma, err := strconv.ParseFloat(localOptionsLines.Pgamma[j], 64)
-						if err != nil {
-							pGamma = 0.0
-						}
+					// 	// Парсим Put OI и Put Gamma
+					// 	pOi, err := strconv.ParseFloat(localOptionsLines.Poi[j], 64)
+					// 	if err != nil {
+					// 		pOi = 0.0
+					// 	}
+					// 	pGamma, err := strconv.ParseFloat(localOptionsLines.Pgamma[j], 64)
+					// 	if err != nil {
+					// 		pGamma = 0.0
+					// 	}
 
-						// Считаем GEX значения
-						callGex := cOi * cGamma
-						putGex := -(pOi * pGamma) // Путы берутся со знаком минус
-						netGex := callGex + putGex
+					// 	// Считаем GEX значения
+					// 	callGex := cOi * cGamma
+					// 	putGex := -(pOi * pGamma) // Путы берутся со знаком минус
+					// 	netGex := callGex + putGex
 
-						// Форматируем float64 обратно в string и записываем в результирующую структуру
-						localOptionsLines.Cgex[j] = strconv.FormatFloat(callGex, 'f', 4, 64)
-						localOptionsLines.Pgex[j] = strconv.FormatFloat(putGex, 'f', 4, 64)
-						localOptionsLines.Netgex[j] = strconv.FormatFloat(netGex, 'f', 4, 64)
-					}
+					// 	// Форматируем float64 обратно в string и записываем в результирующую структуру
+					// 	localOptionsLines.Cgex[j] = strconv.FormatFloat(callGex, 'f', 4, 64)
+					// 	localOptionsLines.Pgex[j] = strconv.FormatFloat(putGex, 'f', 4, 64)
+					// 	localOptionsLines.Netgex[j] = strconv.FormatFloat(netGex, 'f', 4, 64)
+					// }
 
 					//просчитаем спреды
-					for j := range localOptionsLines.Strikes {
+					// for j := range localOptionsLines.Strikes {
 
-						// Парсим Call Ask и Call Bid
-						cAsk, cAskErr := strconv.ParseFloat(localOptionsLines.Cask[j], 64)
-						cBid, cBidErr := strconv.ParseFloat(localOptionsLines.Cbid[j], 64)
+					// 	// Парсим Call Ask и Call Bid
+					// 	cAsk, cAskErr := strconv.ParseFloat(localOptionsLines.Cask[j], 64)
+					// 	cBid, cBidErr := strconv.ParseFloat(localOptionsLines.Cbid[j], 64)
 
-						// Парсим Put Ask и Put Bid
-						pAsk, pAskErr := strconv.ParseFloat(localOptionsLines.Pask[j], 64)
-						pBid, pBidErr := strconv.ParseFloat(localOptionsLines.Pbid[j], 64)
+					// 	// Парсим Put Ask и Put Bid
+					// 	pAsk, pAskErr := strconv.ParseFloat(localOptionsLines.Pask[j], 64)
+					// 	pBid, pBidErr := strconv.ParseFloat(localOptionsLines.Pbid[j], 64)
 
-						var cSpread, pSpread float64
+					// 	var cSpread, pSpread float64
 
-						// Считаем Call спред, только если обе строки успешно распарсились
-						if cAskErr == nil && cBidErr == nil {
-							cSpread = cAsk - cBid
-						}
+					// 	// Считаем Call спред, только если обе строки успешно распарсились
+					// 	if cAskErr == nil && cBidErr == nil {
+					// 		cSpread = cAsk - cBid
+					// 	}
 
-						// Считаем Put спред, только если обе строки успешно распарсились
-						if pAskErr == nil && pBidErr == nil {
-							pSpread = pAsk - pBid
-						}
+					// 	// Считаем Put спред, только если обе строки успешно распарсились
+					// 	if pAskErr == nil && pBidErr == nil {
+					// 		pSpread = pAsk - pBid
+					// 	}
 
-						// Форматируем float64 обратно в string и записываем в результирующую структуру
-						localOptionsLines.Cspread[j] = strconv.FormatFloat(cSpread, 'f', 4, 64)
-						localOptionsLines.Pspread[j] = strconv.FormatFloat(pSpread, 'f', 4, 64)
-					}
+					// 	// Форматируем float64 обратно в string и записываем в результирующую структуру
+					// 	localOptionsLines.Cspread[j] = strconv.FormatFloat(cSpread, 'f', 4, 64)
+					// 	localOptionsLines.Pspread[j] = strconv.FormatFloat(pSpread, 'f', 4, 64)
+					// }
 
 					//заполним данные для текущей серии опционов
 					localOptionsTickers := shared.TickersDataOptions{

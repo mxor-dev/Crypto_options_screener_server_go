@@ -638,8 +638,8 @@ func main() {
 				Cbid:  []string{},
 				Pbid:  []string{},
 
-				Cspread: []string{},
-				Pspread: []string{},
+				// Cspread: []string{},
+				// Pspread: []string{},
 
 				Cdelta: []string{},
 				Pdelta: []string{},
@@ -663,14 +663,14 @@ func main() {
 				PbidIv: []string{},
 				MarkIv: []string{},
 
-				Cgex:   []string{},
-				Pgex:   []string{},
-				Netgex: []string{},
+				// Cgex:   []string{},
+				// Pgex:   []string{},
+				// Netgex: []string{},
 
-				CFeeM: []string{},
-				PFeeM: []string{},
-				CFeeT: []string{},
-				PFeeT: []string{},
+				// CFeeM: []string{},
+				// PFeeM: []string{},
+				// CFeeT: []string{},
+				// PFeeT: []string{},
 			}
 
 			//для каждой линии
@@ -690,10 +690,14 @@ func main() {
 				case "p_bid":
 					newOptionsLines.Pbid = availableOptionsLines.Pbid
 
-				case "c_spread":
-					newOptionsLines.Cspread = availableOptionsLines.Cspread
-				case "p_spread":
-					newOptionsLines.Pspread = availableOptionsLines.Pspread
+				// case "c_spread": //счтиаем на клиенте
+				// 	// newOptionsLines.Cspread = availableOptionsLines.Cspread
+				// 	newOptionsLines.Cask = availableOptionsLines.Cask
+				// 	newOptionsLines.Cbid = availableOptionsLines.Cbid
+				// case "p_spread": //счтиаем на клиенте
+				// 	// newOptionsLines.Pspread = availableOptionsLines.Pspread
+				// 	newOptionsLines.Pask = availableOptionsLines.Pask
+				// 	newOptionsLines.Pbid = availableOptionsLines.Pbid
 
 				case "c_delta":
 					newOptionsLines.Cdelta = availableOptionsLines.Cdelta
@@ -736,21 +740,29 @@ func main() {
 				case "mark_iv":
 					newOptionsLines.MarkIv = availableOptionsLines.MarkIv
 
-				case "c_gex":
-					newOptionsLines.Cgex = availableOptionsLines.Cgex
-				case "p_gex":
-					newOptionsLines.Pgex = availableOptionsLines.Pgex
-				case "net_gex":
-					newOptionsLines.Netgex = availableOptionsLines.Netgex
+				// case "c_gex":
+				// 	// newOptionsLines.Cgex = availableOptionsLines.Cgex
+				// 	newOptionsLines.Coi = availableOptionsLines.Coi
+				// 	newOptionsLines.Cgamma = availableOptionsLines.Cgamma
+				// case "p_gex":
+				// 	// newOptionsLines.Pgex = availableOptionsLines.Pgex
+				// 	newOptionsLines.Coi = availableOptionsLines.Coi
+				// 	newOptionsLines.Pgamma = availableOptionsLines.Pgamma
+				// case "net_gex":
+				// 	// newOptionsLines.Netgex = availableOptionsLines.Netgex
+				// 	newOptionsLines.Coi = availableOptionsLines.Coi
+				// 	newOptionsLines.Cgamma = availableOptionsLines.Cgamma
+				// 	newOptionsLines.Coi = availableOptionsLines.Coi
+				// 	newOptionsLines.Pgamma = availableOptionsLines.Pgamma
 
-				case "c_fee_m":
-					newOptionsLines.CFeeM = availableOptionsLines.CFeeM
-				case "p_fee_m":
-					newOptionsLines.PFeeM = availableOptionsLines.PFeeM
-				case "c_fee_t":
-					newOptionsLines.CFeeT = availableOptionsLines.CFeeT
-				case "p_fee_t":
-					newOptionsLines.PFeeT = availableOptionsLines.PFeeT
+				// case "c_fee_m":
+				// 	// newOptionsLines.CFeeM = availableOptionsLines.CFeeM
+				// case "p_fee_m":
+				// 	// newOptionsLines.PFeeM = availableOptionsLines.PFeeM
+				// case "c_fee_t":
+				// 	// newOptionsLines.CFeeT = availableOptionsLines.CFeeT
+				// case "p_fee_t":
+				// 	// newOptionsLines.PFeeT = availableOptionsLines.PFeeT
 				}
 			}
 
