@@ -1329,7 +1329,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 			//запишем полученные данные
 			exchange.AllSymbols[symbol].TikersData.Lock()
 			exchange.AllSymbols[symbol].TikersData.Options = localAllOptionsTickers
-			exchange.AllSymbols[symbol].TikersData.Ts = time.Now()
+			exchange.AllSymbols[symbol].TikersData.Ts = time.Now().UTC()
 			OptionsLen := len(exchange.AllSymbols[symbol].TikersData.Options)
 			// slog.Error("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].TikersData.Options)
 			exchange.AllSymbols[symbol].TikersData.Unlock()
