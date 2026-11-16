@@ -1533,7 +1533,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 				klines[0].Close,
 			}
 			//отметим время измененея
-			klineDataMu.KlineData.Ts = time.Now()
+			klineDataMu.KlineData.Ts = time.Now().UTC()
 			klineDataMu.Unlock()
 
 			slog.Debug("Пришли данные", "resp.Data", resp.Data)
