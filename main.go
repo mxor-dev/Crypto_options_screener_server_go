@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -565,11 +564,12 @@ func main() {
 	//текущая информация по тикерам spot, perpetual. futures. options
 	r.POST("/api/tickers_data", func(c *gin.Context) {
 		type TickersRequest struct {
+			DataType string `json:"data_type"`
+			Ts       int64  `json:"ts"`
+
 			ExchangeName string   `json:"exchange_name" binding:"required"`
 			Symbol       string   `json:"symbol" binding:"required"`
 			LinesToFetch []string `json:"lines_to_fetch"`
-			Ts           string
-			DataType     string
 		}
 
 		var req TickersRequest
@@ -611,6 +611,7 @@ func main() {
 			Options    []shared.TickersDataOptions `json:"options"`
 			IndexPrice string                      `json:"index_price"`
 			Ts         int64                       `json:"ts"`
+			IsHistory  bool                        `json:"is_history"`
 		}
 
 		var spot shared.TickersDataSpot
@@ -619,10 +620,10 @@ func main() {
 		var options []shared.TickersDataOptions
 		var indexPrice string
 		var ts int64
+		var isHistory bool
 
-		//переменные для хранения данных
-
-		if req.DataType == "Current" {
+		//если нужны текущие данные
+		if req.Ts == 0 {
 			//получим текущие данные тикеров
 			allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Lock()
 			spot = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Spot
@@ -631,27 +632,22 @@ func main() {
 			options = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Options
 			indexPrice = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.IndexPrice
 			ts = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Ts.UnixMilli()
+			isHistory = false
 			allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Unlock()
-		}
-		if req.DataType == "History" {
-			// Преобразуем строку в int64 (основание системы счисления 10, размер 64 бита)
-			tsNum, err := strconv.ParseInt(req.Ts, 10, 64)
-			if err != nil {
-				// Обработка ошибки, если в req.Ts пришло не число (например, пустая строка или буквы)
-				slog.Error("Некорректный формат ts", "ts", req.Ts, "err", err)
+		} else {
 
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: Некорректный формат ts"})
-				return
-			}
-
-			historyTickerData, err := workers.GetTickerDataFromDb(ctx, pool, req.ExchangeName, req.Symbol, tsNum)
+			//получим исторические данные
+			historyTickerData, err := workers.GetTickerDataFromDb(ctx, pool, req.ExchangeName, req.Symbol, req.Ts)
 			if err != nil {
 
 				if errors.Is(err, pgx.ErrNoRows) {
 					// Данных за этот ts в базе просто нет (это не сбой БД)
-					
+
 					slog.Warn("Историчесие данные не найдены", "req", req, "err", err)
-					c.JSON(http.StatusBadRequest, gin.H{"error": "Историчесие данные не найдены"})
+					c.JSON(http.StatusBadRequest, gin.H{
+						"error": "Исторические данные не найдены",
+						"msg":   "no_history_data",
+					})
 					return
 				}
 				// Реальная ошибка подключения к PostgreSQL или битый JSON
@@ -667,7 +663,8 @@ func main() {
 			futures = historyTickerData.Futures
 			options = historyTickerData.Options
 			indexPrice = historyTickerData.IndexPrice
-			ts = tsNum
+			ts = req.Ts
+			isHistory = true
 		}
 
 		newOptionsArr := []shared.TickersDataOptions{}
@@ -846,6 +843,7 @@ func main() {
 			Options:    newOptionsArr,
 			IndexPrice: indexPrice,
 			Ts:         ts,
+			IsHistory:  isHistory,
 		}
 
 		//дадим ответ
