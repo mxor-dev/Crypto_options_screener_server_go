@@ -32,7 +32,7 @@ type SymbolData struct {
 
 	Info InfoMu
 
-	TikersData TikersDataMu
+	TickersData TickersDataMu
 }
 
 type InfoMu struct {

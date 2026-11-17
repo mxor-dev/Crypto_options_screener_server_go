@@ -2,6 +2,7 @@ package workers
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"runtime"
 	"slices"
@@ -158,28 +159,95 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 
 }
 
-// получает разово данные kline для всех монет и всех интервалов и сохранеет их в БД
-// func GetKlineDataInitial(exchange *shared.Exchange, allKlineIntervals []string, symbol string, contract string, category string, limit string) {
+//------- работа с БД------
 
-// 	slog.Debug("Данные интервалов", "allKlineIntervals", allKlineIntervals)
-// 	slog.Debug("Пауза между запросами", "exchange.FetchIntervals.RestDataGetInterval", exchange.FetchIntervals.RestDataGetInterval)
+// сохраняет данные тикеров для всех монет указанной биржи
+func SaveAllTickersDataToDb(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
-// 	//для каждого интервала
-// 	for i := range allKlineIntervals {
-// 		slog.Debug("Интервал", "i", i)
-// 		//получим данные и сохраним их
-// 		GetKlineData(exchange, symbol, contract, category, allKlineIntervals[i], limit)
+	//переменная для сохранения
+	var tickerDataToSave shared.TickersDataToSave
 
-// 		//сделаем паузу между запросами
-// 		time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-// 	}
+	// Берем текущее время в UTC и отбрасываем лишние минуты, секунды и наносекунды до 15 минут
+	ts := time.Now().UTC().Truncate(15 * time.Minute).UnixMilli()
 
-// }
+	//для каждого символа для данной биржи
+	for i := range exchange.AllSymbols {
 
-//------- REST ВОРКЕРЫ ------
+		//получим данные для текущего символа
+		exchange.AllSymbols[i].TickersData.Lock()
+		tickerDataToSave.Spot = exchange.AllSymbols[i].TickersData.Spot
+		tickerDataToSave.Perpetual = exchange.AllSymbols[i].TickersData.Perpetual
+		tickerDataToSave.Futures = exchange.AllSymbols[i].TickersData.Futures
+		tickerDataToSave.Options = exchange.AllSymbols[i].TickersData.Options
+		tickerDataToSave.IndexPrice = exchange.AllSymbols[i].TickersData.IndexPrice
+		// Преобразуем структуру TickersData в JSON ([]byte) для колонки JSONB - делаем внутри lock/unlock
+		tickersJSON, err := json.Marshal(tickerDataToSave)
+		if err != nil {
+			slog.Error("Ошибка сериализации TickersData в JSON", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "err", err)
+			exchange.AllSymbols[i].TickersData.Unlock()
+			return
+		}
+		exchange.AllSymbols[i].TickersData.Unlock()
+
+		query := `
+			INSERT INTO all_tickers_data (
+				exchange_name, symbol, tickers_data, ts
+			)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (exchange_name, symbol, ts)
+			DO UPDATE SET
+				tickers_data = EXCLUDED.tickers_data;
+		`
+
+		_, err = pool.Exec(
+			ctx,
+			query,
+			exchange.ExchangeName,
+			exchange.AllSymbols[i].Symbol,
+			tickersJSON,
+			ts, // int64, полученный через .UnixMilli()
+		)
+		if err != nil {
+			slog.Error("Ошибка при сохранении тикера в БД", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "err", err)
+			return
+		}
+
+		slog.Info("Данные тикера сохранены в БД", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol)
+	}
+}
+
+// получение записи из таблицы бд tickersData
+func GetTickerDataFromDb(ctx context.Context, pool *pgxpool.Pool, exchangeName, symbol string, ts int64) (*shared.TickersDataToSave, error) {
+
+	//выход
+	var output shared.TickersDataToSave
+
+	query := `
+		SELECT tickers_data
+		FROM all_tickers_data
+		WHERE exchange_name = $1 AND symbol = $2 AND ts = $3;
+	`
+
+	var rawJSON []byte
+
+	err := pool.QueryRow(ctx, query, exchangeName, symbol, ts).Scan(&rawJSON)
+	if err != nil {
+		// Если запись не найдена, pgx вернет pgx.ErrNoRows
+		return nil, err
+	}
+
+	// Распаковываем JSONB обратно в Go-структуру
+	if err := json.Unmarshal(rawJSON, &output); err != nil {
+		return nil, err
+	}
+
+	return &output, nil
+}
+
+// ------- REST ВОРКЕРЫ ------
 
 // получает данные с определенным интервалом и записывает их в бд
-func GetDataSequentalTimer(ctx context.Context, exchange *shared.Exchange) {
+func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
@@ -215,6 +283,13 @@ func GetDataSequentalTimer(ctx context.Context, exchange *shared.Exchange) {
 			if seconds%int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) == 0 {
 				//последовательно получим данные
 				exchange.Client.GetTickersDataSequental(exchange)
+
+				//на каждоой 15 минуте сохраним данные в БД
+				if minutes%15 == 0 {
+
+					//соохраним данные тикеров для всех монет в бд
+					SaveAllTickersDataToDb(ctx, pool, exchange)
+				}
 			}
 			// на каждой 15 минуте и 10 секунде
 			if (minutes%15 == 0) && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
@@ -291,68 +366,6 @@ func GetDataSequentalTimer(ctx context.Context, exchange *shared.Exchange) {
 		}
 	}
 }
-
-// воркер для получения данных по опционам по таймеру
-// func GetOptionsDataTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
-
-// 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
-
-// 	//создадим тикер который будет срабатывать каждые 1 секунду
-// 	ticker := time.NewTicker(1 * time.Second)
-// 	defer func() {
-// 		ticker.Stop()
-// 		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
-// 	}()
-
-// 	for {
-// 		select {
-// 		//если тикер дал тик
-// 		case <-ticker.C:
-
-// 			//получим текущее время
-// 			now := time.Now().UTC()
-
-// 			//отбросим все до секунды
-// 			now = now.Truncate(time.Second)
-
-// 			//получим секунды
-// 			seconds := now.Second()
-
-// 			// на каждой пятой секунде
-// 			if seconds%5 == 0 {
-
-// 				// slog.Warn("Сработал тикер", "func", "GetOptionsDataTimer", "exchangeName", exchange.ExchangeName)
-
-// 				//для каждого символа - через индекс потому что внутри мьютексы
-// 				for i := range exchange.AllSymbols {
-
-// 					//если для символа стоит отметка получать категорию опционы
-// 					if slices.Contains(exchange.AllSymbols[i].FetchFilter, "option") {
-// 						optionsData, err := exchange.Client.GetOptionsTickers(exchange.AllSymbols[i].Symbol)
-// 						if err != nil {
-// 							slog.Error("Ошибка при получении данных по опционам", "exchangeName", exchange.ExchangeName, "symbol", exchange.AllSymbols[i].Symbol, "err", err)
-// 						}
-
-// 						exchange.AllSymbols[i].OptionsData.Lock()
-// 						//передадим данне по опционам в общую структуру
-// 						exchange.AllSymbols[i].OptionsData.OptionsDataArr = optionsData
-// 						exchange.AllSymbols[i].OptionsData.Unlock()
-
-// 					}
-// 				}
-// 			}
-
-// 		case <-ctx.Done():
-// 			// Завершаем работу функции по контексту - все defer отрабатают автоматически
-// 			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
-// 			return
-// 		}
-// 	}
-// }
-
-// ------- WEB SOCKET ВОРКЕРЫ ------
-
-//------- ВОРКЕРЫ для работы с БД------
 
 // воркер для сохранения данных в бд по таймеру
 func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {

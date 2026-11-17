@@ -524,8 +524,8 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 			//если в полученных данных длина массива больше 1
 			if len(list) > 0 {
 				//сохраним данные
-				exchange.AllSymbols[symbol].TikersData.Lock()
-				exchange.AllSymbols[symbol].TikersData.Spot = shared.TickersDataSpot{
+				exchange.AllSymbols[symbol].TickersData.Lock()
+				exchange.AllSymbols[symbol].TickersData.Spot = shared.TickersDataSpot{
 					Symbol:    list[0].Symbol,
 					BidPrice:  list[0].BidPrice,
 					BidSize:   list[0].BidSize,
@@ -533,7 +533,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 					AskSize:   list[0].AskSize,
 					LastPrice: list[0].LastPrice,
 				}
-				exchange.AllSymbols[symbol].TikersData.Unlock()
+				exchange.AllSymbols[symbol].TickersData.Unlock()
 
 				slog.Info("Получены данные spotTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol+"USDT", "category", "spot")
 			}
@@ -629,8 +629,8 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						}
 
 						//сохраним данные
-						exchange.AllSymbols[symbol].TikersData.Lock()
-						exchange.AllSymbols[symbol].TikersData.Perpetual = shared.TickersDataPerpetual{
+						exchange.AllSymbols[symbol].TickersData.Lock()
+						exchange.AllSymbols[symbol].TickersData.Perpetual = shared.TickersDataPerpetual{
 							Symbol:          list[i].Symbol,
 							BidPrice:        list[i].BidPrice,
 							BidSize:         list[i].BidSize,
@@ -640,7 +640,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 							FundingRate:     list[i].FundingRate,
 							NextFundingTime: list[i].NextFundingTime,
 						}
-						exchange.AllSymbols[symbol].TikersData.Unlock()
+						exchange.AllSymbols[symbol].TickersData.Unlock()
 
 					}
 
@@ -670,21 +670,21 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 				//если найдены фьючерсы
 				// if len(localFuturesTickersArr) > 0 {
-				// 	exchange.AllSymbols[symbol].TikersData.Lock()
-				// 	exchange.AllSymbols[symbol].TikersData.IndexPrice = indexPrice
-				// 	exchange.AllSymbols[symbol].TikersData.Futures = localFuturesTickersArr
-				// 	exchange.AllSymbols[symbol].TikersData.Unlock()
+				// 	exchange.AllSymbols[symbol].TickersData.Lock()
+				// 	exchange.AllSymbols[symbol].TickersData.IndexPrice = indexPrice
+				// 	exchange.AllSymbols[symbol].TickersData.Futures = localFuturesTickersArr
+				// 	exchange.AllSymbols[symbol].TickersData.Unlock()
 
 				// }
 
 				//запишем найденный indexPrice (Он может быть найден или в perpetual или во futures) и данные futures
-				exchange.AllSymbols[symbol].TikersData.Lock()
-				exchange.AllSymbols[symbol].TikersData.IndexPrice = indexPrice
+				exchange.AllSymbols[symbol].TickersData.Lock()
+				exchange.AllSymbols[symbol].TickersData.IndexPrice = indexPrice
 				//если найдены фьючерсы
 				if len(localFuturesTickersArr) > 0 {
-					exchange.AllSymbols[symbol].TikersData.Futures = localFuturesTickersArr
+					exchange.AllSymbols[symbol].TickersData.Futures = localFuturesTickersArr
 				}
-				exchange.AllSymbols[symbol].TikersData.Unlock()
+				exchange.AllSymbols[symbol].TickersData.Unlock()
 
 				slog.Info("Получены данные linearTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol, "category", "linear")
 			}
@@ -1327,12 +1327,12 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 			})
 
 			//запишем полученные данные
-			exchange.AllSymbols[symbol].TikersData.Lock()
-			exchange.AllSymbols[symbol].TikersData.Options = localAllOptionsTickers
-			exchange.AllSymbols[symbol].TikersData.Ts = time.Now().UTC()
-			OptionsLen := len(exchange.AllSymbols[symbol].TikersData.Options)
-			// slog.Error("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].TikersData.Options)
-			exchange.AllSymbols[symbol].TikersData.Unlock()
+			exchange.AllSymbols[symbol].TickersData.Lock()
+			exchange.AllSymbols[symbol].TickersData.Options = localAllOptionsTickers
+			exchange.AllSymbols[symbol].TickersData.Ts = time.Now().UTC()
+			OptionsLen := len(exchange.AllSymbols[symbol].TickersData.Options)
+			// slog.Error("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].TickersData.Options)
+			exchange.AllSymbols[symbol].TickersData.Unlock()
 
 			slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "OptionsLen", OptionsLen)
 		}

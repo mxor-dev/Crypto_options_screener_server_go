@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-type TikersDataMu struct {
+type TickersDataMu struct {
 	Spot       TickersDataSpot
 	Perpetual  TickersDataPerpetual
 	Futures    []TickersDataFutures
@@ -13,6 +13,13 @@ type TikersDataMu struct {
 	IndexPrice string
 	Ts         time.Time
 	sync.Mutex
+}
+type TickersDataToSave struct {
+	Spot       TickersDataSpot
+	Perpetual  TickersDataPerpetual
+	Futures    []TickersDataFutures
+	Options    []TickersDataOptions
+	IndexPrice string
 }
 
 type TickersDataSpot struct {

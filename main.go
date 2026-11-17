@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/lmittmann/tint"
@@ -187,7 +189,7 @@ func main() {
 			symbolData := allExchanges[exchangeName].AllSymbols[symbolName]
 
 			// Инициализируем пустую структуру для тикеров
-			symbolData.TikersData = shared.TikersDataMu{}
+			symbolData.TickersData = shared.TickersDataMu{}
 		}
 
 		// Инициализируем мапу клайнов (Мьютексы на старте лочить НЕ НУЖНО)
@@ -236,7 +238,7 @@ func main() {
 				workers.GetAllSymbolsInfo(pool, allExchanges[exKey])
 
 				//запускаем горутину воркера для получения обновления данных kline по таймеру
-				go workers.GetDataSequentalTimer(ctx, allExchanges[exKey])
+				go workers.GetDataSequentalTimer(ctx, pool, allExchanges[exKey])
 
 				//в зависимости от биржи для получнеия последней свечи могут использоваться один или два ws воркера
 				switch exKey {
@@ -566,6 +568,8 @@ func main() {
 			ExchangeName string   `json:"exchange_name" binding:"required"`
 			Symbol       string   `json:"symbol" binding:"required"`
 			LinesToFetch []string `json:"lines_to_fetch"`
+			Ts           string
+			DataType     string
 		}
 
 		var req TickersRequest
@@ -609,15 +613,62 @@ func main() {
 			Ts         int64                       `json:"ts"`
 		}
 
-		//получим данные тикеров
-		allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Lock()
-		spot := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Spot
-		perpetual := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Perpetual
-		futures := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Futures
-		options := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Options
-		indexPrice := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.IndexPrice
-		ts := allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Ts.UnixMilli()
-		allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TikersData.Unlock()
+		var spot shared.TickersDataSpot
+		var perpetual shared.TickersDataPerpetual
+		var futures []shared.TickersDataFutures
+		var options []shared.TickersDataOptions
+		var indexPrice string
+		var ts int64
+
+		//переменные для хранения данных
+
+		if req.DataType == "Current" {
+			//получим текущие данные тикеров
+			allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Lock()
+			spot = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Spot
+			perpetual = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Perpetual
+			futures = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Futures
+			options = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Options
+			indexPrice = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.IndexPrice
+			ts = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Ts.UnixMilli()
+			allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Unlock()
+		}
+		if req.DataType == "History" {
+			// Преобразуем строку в int64 (основание системы счисления 10, размер 64 бита)
+			tsNum, err := strconv.ParseInt(req.Ts, 10, 64)
+			if err != nil {
+				// Обработка ошибки, если в req.Ts пришло не число (например, пустая строка или буквы)
+				slog.Error("Некорректный формат ts", "ts", req.Ts, "err", err)
+
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: Некорректный формат ts"})
+				return
+			}
+
+			historyTickerData, err := workers.GetTickerDataFromDb(ctx, pool, req.ExchangeName, req.Symbol, tsNum)
+			if err != nil {
+
+				if errors.Is(err, pgx.ErrNoRows) {
+					// Данных за этот ts в базе просто нет (это не сбой БД)
+					
+					slog.Warn("Историчесие данные не найдены", "req", req, "err", err)
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Историчесие данные не найдены"})
+					return
+				}
+				// Реальная ошибка подключения к PostgreSQL или битый JSON
+				slog.Error("Ошибка БД при получении тикера", "req", req, "err", err)
+
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка сервера"})
+				return
+			}
+
+			//заполним данные из истории
+			spot = historyTickerData.Spot
+			perpetual = historyTickerData.Perpetual
+			futures = historyTickerData.Futures
+			options = historyTickerData.Options
+			indexPrice = historyTickerData.IndexPrice
+			ts = tsNum
+		}
 
 		newOptionsArr := []shared.TickersDataOptions{}
 
@@ -627,7 +678,7 @@ func main() {
 			//доступные данные по опционным линиям
 			availableOptionsLines := options[i].OptionsLines
 
-			//тукущий набор
+			//текущий набор
 			newOptionsLines := shared.OptionsLines{
 				Strikes: availableOptionsLines.Strikes,
 
