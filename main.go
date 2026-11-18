@@ -564,12 +564,10 @@ func main() {
 	//текущая информация по тикерам spot, perpetual. futures. options
 	r.POST("/api/tickers_data", func(c *gin.Context) {
 		type TickersRequest struct {
-			DataType string `json:"data_type"`
-			Ts       int64  `json:"ts"`
-
 			ExchangeName string   `json:"exchange_name" binding:"required"`
 			Symbol       string   `json:"symbol" binding:"required"`
 			LinesToFetch []string `json:"lines_to_fetch"`
+			Ts           int64    `json:"ts"`
 		}
 
 		var req TickersRequest
@@ -611,7 +609,6 @@ func main() {
 			Options    []shared.TickersDataOptions `json:"options"`
 			IndexPrice string                      `json:"index_price"`
 			Ts         int64                       `json:"ts"`
-			IsHistory  bool                        `json:"is_history"`
 		}
 
 		var spot shared.TickersDataSpot
@@ -620,7 +617,6 @@ func main() {
 		var options []shared.TickersDataOptions
 		var indexPrice string
 		var ts int64
-		var isHistory bool
 
 		//если нужны текущие данные
 		if req.Ts == 0 {
@@ -632,7 +628,6 @@ func main() {
 			options = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Options
 			indexPrice = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.IndexPrice
 			ts = allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Ts.UnixMilli()
-			isHistory = false
 			allExchanges[req.ExchangeName].AllSymbols[req.Symbol].TickersData.Unlock()
 		} else {
 
@@ -664,7 +659,7 @@ func main() {
 			options = historyTickerData.Options
 			indexPrice = historyTickerData.IndexPrice
 			ts = req.Ts
-			isHistory = true
+
 		}
 
 		newOptionsArr := []shared.TickersDataOptions{}
@@ -822,8 +817,8 @@ func main() {
 
 				ForwardPrice: options[i].ForwardPrice,
 
-				MinMarkIv:             options[i].MinMarkIv,
-				NearestIvToIndexPrice: options[i].NearestIvToIndexPrice,
+				MinMarkIv:    options[i].MinMarkIv,
+				IndexPriceIv: options[i].IndexPriceIv,
 
 				CallIv25Delta: options[i].CallIv25Delta,
 				PutIv25Delta:  options[i].PutIv25Delta,
@@ -843,7 +838,6 @@ func main() {
 			Options:    newOptionsArr,
 			IndexPrice: indexPrice,
 			Ts:         ts,
-			IsHistory:  isHistory,
 		}
 
 		//дадим ответ

@@ -1085,7 +1085,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 					//минимум линии и IV для 25 дельты
 					var minMarkIvStr [2]string
-					var nearestIvToIndexPrice [2]string
+					var indexPriceIvStr [2]string
 					var callIv25DeltaStr [2]string
 					var putIv25DeltaStr [2]string
 					var skewIv25DeltaStr string
@@ -1093,131 +1093,110 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 					//если линия MarkIv не нулевая
 					if len(localOptionsLines.MarkIv) > 0 {
 
+						//создадим начальные массивы требуемых данных во float64
+						strikesFloatArr := make([]float64, len(localOptionsLines.Strikes))
+						markIvFloatArr := make([]float64, len(localOptionsLines.MarkIv))
+						cDeltaFloatArr := make([]float64, len(localOptionsLines.Cdelta))
+						pDeltaFloatArr := make([]float64, len(localOptionsLines.Pdelta))
+
+						for j := range localOptionsLines.Strikes {
+							// переведем необходимые линии в числа
+							strikesFloatArr[j], err = strconv.ParseFloat(localOptionsLines.Strikes[j], 64)
+							if err != nil {
+								strikesFloatArr[j] = 0.0
+							}
+							markIvFloatArr[j], err = strconv.ParseFloat(localOptionsLines.MarkIv[j], 64)
+							if err != nil {
+								markIvFloatArr[j] = 0.0
+							}
+							cDeltaFloatArr[j], err = strconv.ParseFloat(localOptionsLines.Cdelta[j], 64)
+							if err != nil {
+								cDeltaFloatArr[j] = 0.0
+							}
+							pDeltaFloatArr[j], err = strconv.ParseFloat(localOptionsLines.Pdelta[j], 64)
+							if err != nil {
+								pDeltaFloatArr[j] = 0.0
+							}
+						}
+
 						//первое значение макс float64
 						minMarkIv := math.MaxFloat64
-
+						minMarkIvIndex := 0
 						// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "localOptionsLines.MarkIv", localOptionsLines.MarkIv)
 						//********** minMarkIv **********
 
 						//найдем minMarkIv
-						for j := range localOptionsLines.MarkIv {
-
-							// slog.Warn("Debug", "ExchangeName", b.ExchangeName, "symbol", symbol, "markIvStr", markIvStr)
-
-							// Конвертируем строку в число (база 10, размер int)
-							num, err := strconv.ParseFloat(localOptionsLines.MarkIv[j], 64)
-							if err != nil {
-								num = 0.0
-							}
+						for j := range markIvFloatArr {
 
 							// Если текущее число меньше сохраненного минимума, обновляем минимум
-							if num < minMarkIv {
+							if markIvFloatArr[j] < minMarkIv {
 								//сохраним числовое значение
-								minMarkIv = num
-								//сохраним значение в массиве строк
-								minMarkIvStr = [2]string{localOptionsLines.Strikes[j], localOptionsLines.MarkIv[j]}
+								minMarkIv = markIvFloatArr[j]
+								minMarkIvIndex = j
 							}
 						}
 
-						//********** nearestIvToIndexPrice **********
+						//сохраним найденное значение в массиве строк
+						minMarkIvStr = [2]string{localOptionsLines.Strikes[minMarkIvIndex], localOptionsLines.MarkIv[minMarkIvIndex]}
 
-						strikeFloat, err := strconv.ParseFloat(localOptionsLines.Strikes[0], 64)
-						if err != nil {
-							strikeFloat = 0.0
-						}
+						//********** IndexPriceIv **********
 
-						//дельта между текущим страйком и ценой индекса
-						lastIndexPriceDelta := math.Abs(indexPrice - strikeFloat)
+						interpolatedMarkIv := 0.0
 
-						//найдем nearestIvToIndexPrice
-						for j := range localOptionsLines.Strikes {
+						//пройдемся по массиву страйков
+						for j := 1; j < len(strikesFloatArr); j++ {
+							//если цена индекса находиться между двумя страйками
+							if strikesFloatArr[j-1] <= indexPrice && strikesFloatArr[j] >= indexPrice {
 
-							//конвертируем текущий страйк
-							strikeFloat, err := strconv.ParseFloat(localOptionsLines.Strikes[j], 64)
-							if err != nil {
-								strikeFloat = 0.0
-							}
+								//запишем IV с защитой от деления на 0
+								if strikesFloatArr[j] != strikesFloatArr[j-1] {
+									weight := (indexPrice - strikesFloatArr[j-1]) / (strikesFloatArr[j] - strikesFloatArr[j-1])
+									interpolatedMarkIv = markIvFloatArr[j-1] + weight*(markIvFloatArr[j]-markIvFloatArr[j-1])
+								} else {
+									interpolatedMarkIv = markIvFloatArr[j-1]
+								}
 
-							//ищем дельту
-							currIndexPriceDelta := math.Abs(indexPrice - strikeFloat)
-
-							// Если текущая дельта меньше последней
-							if currIndexPriceDelta < lastIndexPriceDelta {
-								//запишем индекс и значение iv
-								nearestIvToIndexPrice = [2]string{localOptionsLines.Strikes[j], localOptionsLines.MarkIv[j]}
-								//обновим последнюю дельту
-								lastIndexPriceDelta = currIndexPriceDelta
+								break
 							}
 						}
+
+						indexPriceIvStr = [2]string{strconv.FormatFloat(indexPrice, 'f', 4, 64), strconv.FormatFloat(interpolatedMarkIv, 'f', 4, 64)}
 
 						//********* callIv25DeltaStr putIv25DeltaStr skewIv25DeltaStr ***********
 
 						//начальные значения
-						callIv25DeltaStr = [2]string{localOptionsLines.Strikes[0], localOptionsLines.MarkIv[0]}
-						putIv25DeltaStr = [2]string{localOptionsLines.Strikes[0], localOptionsLines.MarkIv[0]}
-
-						//перевод в дельту в числа
-						cdeltaFloat, err := strconv.ParseFloat(localOptionsLines.Cdelta[0], 64)
-						if err != nil {
-							cdeltaFloat = 0.0
-						}
-						pdeltaFloat, err := strconv.ParseFloat(localOptionsLines.Pdelta[0], 64)
-						if err != nil {
-							pdeltaFloat = 0.0
-						}
+						callIv25Delta := markIvFloatArr[0]
+						callIv25DeltaIndex := 0
+						putIv25Delta := markIvFloatArr[0]
+						putIv25DeltaIndex := 0
 
 						//начальные дельты для путов и колов
-						lastCallDeltaDelta := math.Abs(0.25 - cdeltaFloat)
-						lastPutDeltaDelta := math.Abs(0.25 - math.Abs(pdeltaFloat))
+						lastCallDeltaDelta := math.Abs(0.25 - callIv25Delta)
+						lastPutDeltaDelta := math.Abs(0.25 - math.Abs(putIv25Delta))
 
-						for j := range localOptionsLines.Strikes {
-							//перевод в числа
-							cdeltaFloat, err = strconv.ParseFloat(localOptionsLines.Cdelta[j], 64)
-							if err != nil {
-								// Обработка ошибки: если в строке прилетел мусор, задаем дефолтное значение
-								cdeltaFloat = 0.0
-							}
-							pdeltaFloat, err = strconv.ParseFloat(localOptionsLines.Pdelta[j], 64)
-							if err != nil {
-								// Обработка ошибки: если в строке прилетел мусор, задаем дефолтное значение
-								pdeltaFloat = 0.0
-							}
+						for j := range markIvFloatArr {
 
 							//текущие дельты для путов и колов
-							currCallDeltaDelta := math.Abs(0.25 - cdeltaFloat)
-							currPutDeltaDelta := math.Abs(0.25 - math.Abs(pdeltaFloat))
+							currCallDeltaDelta := math.Abs(0.25 - cDeltaFloatArr[j])
+							currPutDeltaDelta := math.Abs(0.25 - math.Abs(pDeltaFloatArr[j]))
 
 							//если текущая дельта меньше предыдущей
 							if currCallDeltaDelta < lastCallDeltaDelta {
-
-								//запишем текущие значения MarkIv
-								callIv25DeltaStr = [2]string{localOptionsLines.Strikes[j], localOptionsLines.MarkIv[j]}
-
-								//поменяем последнее значение
-								lastCallDeltaDelta = currCallDeltaDelta
+								//запишем текущий индекс
+								callIv25DeltaIndex = j
 							}
 							if currPutDeltaDelta < lastPutDeltaDelta {
-								//запишем текущие значения MarkIv
-								putIv25DeltaStr = [2]string{localOptionsLines.Strikes[j], localOptionsLines.MarkIv[j]}
-
-								//поменяем последнее значение
-								lastPutDeltaDelta = currPutDeltaDelta
+								//запишем текущий индекс
+								putIv25DeltaIndex = j
 							}
-
 						}
 
-						//перевод полученных MarkIv в числа
-						call25DeltaIv, err := strconv.ParseFloat(callIv25DeltaStr[1], 64)
-						if err != nil {
-							call25DeltaIv = 0.0
-						}
-						put25DeltaIv, err := strconv.ParseFloat(putIv25DeltaStr[1], 64)
-						if err != nil {
-							put25DeltaIv = 0.0
-						}
+						//применим найденные значения
+						callIv25DeltaStr = [2]string{localOptionsLines.Strikes[callIv25DeltaIndex], localOptionsLines.MarkIv[callIv25DeltaIndex]}
+						putIv25DeltaStr = [2]string{localOptionsLines.Strikes[putIv25DeltaIndex], localOptionsLines.MarkIv[putIv25DeltaIndex]}
 
 						//просчитаем skew
-						skewIv25DeltaStr = strconv.FormatFloat(call25DeltaIv-put25DeltaIv, 'f', 4, 64)
+						skewIv25DeltaStr = strconv.FormatFloat(cDeltaFloatArr[callIv25DeltaIndex]-pDeltaFloatArr[putIv25DeltaIndex], 'f', 4, 64)
 
 					}
 
@@ -1289,11 +1268,11 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						ForwardPrice: underlyingPrice,
 						ExpiryTime:   strconv.FormatInt(expiryTime.UnixMilli(), 10),
 
-						MinMarkIv:             minMarkIvStr,
-						NearestIvToIndexPrice: nearestIvToIndexPrice,
-						CallIv25Delta:         callIv25DeltaStr,
-						PutIv25Delta:          putIv25DeltaStr,
-						SkewIv25Delta:         skewIv25DeltaStr,
+						MinMarkIv:     minMarkIvStr,
+						IndexPriceIv:  indexPriceIvStr,
+						CallIv25Delta: callIv25DeltaStr,
+						PutIv25Delta:  putIv25DeltaStr,
+						SkewIv25Delta: skewIv25DeltaStr,
 
 						OptionsLines: localOptionsLines,
 					}

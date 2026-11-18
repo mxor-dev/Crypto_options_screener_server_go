@@ -64,8 +64,8 @@ type TickersDataOptions struct {
 
 	ForwardPrice string `json:"forward_price"` // Форвардная цена базового актива (для Bybit — синтетика серии, для MOEX — цена базового фьючерса / расчётный форвард)
 
-	MinMarkIv             [2]string `json:"min_mark_iv"`
-	NearestIvToIndexPrice [2]string `json:"nearest_iv_to_index_price"`
+	MinMarkIv    [2]string `json:"min_mark_iv"`
+	IndexPriceIv [2]string `json:"index_price_iv"`
 
 	CallIv25Delta [2]string `json:"call_iv_25_delta"`
 	PutIv25Delta  [2]string `json:"put_iv_25_delta"`
