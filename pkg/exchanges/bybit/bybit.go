@@ -548,7 +548,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 	for symbol := range exchange.AllSymbols {
 
-		var indexPrice string
+		// var indexPrice string
 
 		//получим информацию по символу
 		exchange.AllSymbols[symbol].Info.Lock()
@@ -624,9 +624,9 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 						// slog.Error("ЦЕНА ИНДЕКСА", "symbol", symbol, "list[i].IndexPrice", list[i].IndexPrice)
 						//если цена индекса не определена
-						if indexPrice == "" {
-							indexPrice = list[i].IndexPrice
-						}
+						// if indexPrice == "" {
+						// 	indexPrice = list[i].IndexPrice
+						// }
 
 						//сохраним данные
 						exchange.AllSymbols[symbol].TickersData.Lock()
@@ -648,9 +648,9 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						// slog.Warn("futures найден")
 
 						//если цена индекса не определена
-						if indexPrice == "" {
-							indexPrice = list[i].IndexPrice
-						}
+						// if indexPrice == "" {
+						// 	indexPrice = list[i].IndexPrice
+						// }
 
 						//создадим локальные данные
 						localTickers := shared.TickersDataFutures{
@@ -677,9 +677,8 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 				// }
 
-				//запишем найденный indexPrice (Он может быть найден или в perpetual или во futures) и данные futures
+				//запишем найденные данные futures
 				exchange.AllSymbols[symbol].TickersData.Lock()
-				exchange.AllSymbols[symbol].TickersData.IndexPrice = indexPrice
 				//если найдены фьючерсы
 				if len(localFuturesTickersArr) > 0 {
 					exchange.AllSymbols[symbol].TickersData.Futures = localFuturesTickersArr
@@ -777,8 +776,11 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				return
 			}
 
+			//цена индекса строка - потом отдадим в TickersData
+			indexPriceStr := list[0].IndexPrice
+
 			//получим цену индекса для расчетов числом из данных первого опциона
-			indexPrice, err := strconv.ParseFloat(list[0].IndexPrice, 64)
+			indexPrice, err := strconv.ParseFloat(indexPriceStr, 64)
 			if err != nil {
 				indexPrice = 0
 			}
@@ -1086,6 +1088,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 					//минимум линии и IV для 25 дельты
 					var minMarkIvStr [2]string
 					var indexPriceIvStr [2]string
+					var nearestIvToIndexPriceStr [2]string
 					var callIv25DeltaStr [2]string
 					var putIv25DeltaStr [2]string
 					var skewIv25DeltaStr string
@@ -1142,6 +1145,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						//********** IndexPriceIv **********
 
 						interpolatedMarkIv := 0.0
+						nearestIvToIndexPriceIndex := 0
 
 						//пройдемся по массиву страйков
 						for j := 1; j < len(strikesFloatArr); j++ {
@@ -1156,47 +1160,55 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 									interpolatedMarkIv = markIvFloatArr[j-1]
 								}
 
+								//определим индекс ближайшего страйка по дельте
+								if math.Abs(indexPrice-strikesFloatArr[j-1]) <= math.Abs(indexPrice-strikesFloatArr[j-1]) {
+									//запишем индекс
+									nearestIvToIndexPriceIndex = j - 1
+								} else {
+									//запишем индекс
+									nearestIvToIndexPriceIndex = j
+								}
+
 								break
 							}
 						}
 
 						indexPriceIvStr = [2]string{strconv.FormatFloat(indexPrice, 'f', 4, 64), strconv.FormatFloat(interpolatedMarkIv, 'f', 4, 64)}
+						nearestIvToIndexPriceStr = [2]string{localOptionsLines.Strikes[nearestIvToIndexPriceIndex], localOptionsLines.MarkIv[nearestIvToIndexPriceIndex]}
 
 						//********* callIv25DeltaStr putIv25DeltaStr skewIv25DeltaStr ***********
 
-						//начальные значения
-						callIv25Delta := markIvFloatArr[0]
+						// Начальные индексы
 						callIv25DeltaIndex := 0
-						putIv25Delta := markIvFloatArr[0]
 						putIv25DeltaIndex := 0
 
-						//начальные дельты для путов и колов
-						lastCallDeltaDelta := math.Abs(0.25 - callIv25Delta)
-						lastPutDeltaDelta := math.Abs(0.25 - math.Abs(putIv25Delta))
+						// Начальные отклонения от 0.25
+						minCallDeltaDiff := math.Abs(0.25 - cDeltaFloatArr[0])
+						minPutDeltaDiff := math.Abs(0.25 - math.Abs(pDeltaFloatArr[0]))
 
-						for j := range markIvFloatArr {
+						for j := 1; j < len(markIvFloatArr); j++ {
+							// Текущие отклонения от 0.25
+							currCallDeltaDiff := math.Abs(0.25 - cDeltaFloatArr[j])
+							currPutDeltaDiff := math.Abs(0.25 - math.Abs(pDeltaFloatArr[j]))
 
-							//текущие дельты для путов и колов
-							currCallDeltaDelta := math.Abs(0.25 - cDeltaFloatArr[j])
-							currPutDeltaDelta := math.Abs(0.25 - math.Abs(pDeltaFloatArr[j]))
-
-							//если текущая дельта меньше предыдущей
-							if currCallDeltaDelta < lastCallDeltaDelta {
-								//запишем текущий индекс
+							// Если текущее отклонение меньше минимального — обновляем и индекс, и минимум
+							if currCallDeltaDiff < minCallDeltaDiff {
+								minCallDeltaDiff = currCallDeltaDiff
 								callIv25DeltaIndex = j
 							}
-							if currPutDeltaDelta < lastPutDeltaDelta {
-								//запишем текущий индекс
+							if currPutDeltaDiff < minPutDeltaDiff {
+								minPutDeltaDiff = currPutDeltaDiff
 								putIv25DeltaIndex = j
 							}
 						}
 
-						//применим найденные значения
+						// Применяем найденные значения
 						callIv25DeltaStr = [2]string{localOptionsLines.Strikes[callIv25DeltaIndex], localOptionsLines.MarkIv[callIv25DeltaIndex]}
 						putIv25DeltaStr = [2]string{localOptionsLines.Strikes[putIv25DeltaIndex], localOptionsLines.MarkIv[putIv25DeltaIndex]}
 
-						//просчитаем skew
-						skewIv25DeltaStr = strconv.FormatFloat(cDeltaFloatArr[callIv25DeltaIndex]-pDeltaFloatArr[putIv25DeltaIndex], 'f', 4, 64)
+						// Просчитываем Skew по IV (Call IV -Put IV)
+						skewVal := markIvFloatArr[callIv25DeltaIndex] - markIvFloatArr[putIv25DeltaIndex]
+						skewIv25DeltaStr = strconv.FormatFloat(skewVal, 'f', 4, 64)
 
 					}
 
@@ -1268,11 +1280,12 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						ForwardPrice: underlyingPrice,
 						ExpiryTime:   strconv.FormatInt(expiryTime.UnixMilli(), 10),
 
-						MinMarkIv:     minMarkIvStr,
-						IndexPriceIv:  indexPriceIvStr,
-						CallIv25Delta: callIv25DeltaStr,
-						PutIv25Delta:  putIv25DeltaStr,
-						SkewIv25Delta: skewIv25DeltaStr,
+						MinMarkIv:             minMarkIvStr,
+						IndexPriceIv:          indexPriceIvStr,
+						NearestIvToIndexPrice: nearestIvToIndexPriceStr,
+						CallIv25Delta:         callIv25DeltaStr,
+						PutIv25Delta:          putIv25DeltaStr,
+						SkewIv25Delta:         skewIv25DeltaStr,
 
 						OptionsLines: localOptionsLines,
 					}
@@ -1307,6 +1320,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 			//запишем полученные данные
 			exchange.AllSymbols[symbol].TickersData.Lock()
+			exchange.AllSymbols[symbol].TickersData.IndexPrice = indexPriceStr
 			exchange.AllSymbols[symbol].TickersData.Options = localAllOptionsTickers
 			exchange.AllSymbols[symbol].TickersData.Ts = time.Now().UTC()
 			OptionsLen := len(exchange.AllSymbols[symbol].TickersData.Options)

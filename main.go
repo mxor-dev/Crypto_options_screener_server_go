@@ -817,12 +817,12 @@ func main() {
 
 				ForwardPrice: options[i].ForwardPrice,
 
-				MinMarkIv:    options[i].MinMarkIv,
-				IndexPriceIv: options[i].IndexPriceIv,
-
-				CallIv25Delta: options[i].CallIv25Delta,
-				PutIv25Delta:  options[i].PutIv25Delta,
-				SkewIv25Delta: options[i].SkewIv25Delta,
+				MinMarkIv:             options[i].MinMarkIv,
+				IndexPriceIv:          options[i].IndexPriceIv,
+				NearestIvToIndexPrice: options[i].NearestIvToIndexPrice,
+				CallIv25Delta:         options[i].CallIv25Delta,
+				PutIv25Delta:          options[i].PutIv25Delta,
+				SkewIv25Delta:         options[i].SkewIv25Delta,
 
 				OptionsLines: newOptionsLines,
 			}
