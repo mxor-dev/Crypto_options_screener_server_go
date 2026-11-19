@@ -16,7 +16,6 @@ import (
 
 	"crypto_options_screener/pkg/exchanges/bybit"
 	"crypto_options_screener/pkg/shared"
-	"crypto_options_screener/pkg/volatility"
 	"crypto_options_screener/pkg/workers"
 
 	"github.com/gin-contrib/cors"
@@ -135,7 +134,7 @@ func main() {
 				TickersDataGetInterval:       10 * time.Second,
 
 				// KlineDeleteDeltaTime : 30 * time.Second,
-				// KlineDeleteDeltaTime: 1 * time.Minute,
+				// KlineDeleteDeltaTime: 2 * time.Minute,
 				KlineDeleteDeltaTime: 1 * time.Hour,
 
 				WsDeadLineDelta:     30 * time.Second,
@@ -236,14 +235,14 @@ func main() {
 				//тесты
 
 				//просчет волатильности
-				err = volatility.RunExample(ctx, pool)
-				if err != nil {
-					slog.Error("Ошибка при определении волатильности", "err", err)
-				}
+				// err = volatility.RunExample(ctx, pool)
+				// if err != nil {
+				// 	slog.Error("Ошибка при определении волатильности", "err", err)
+				// }
 
 				// workers.GetKlineDataHistory(pool, "kline_data_15m", allExchanges["Bybit"], "BTCUSDT", "perpetual", "15m", 35000)
 
-				os.Exit(0)
+				// os.Exit(0)
 				//запускаем воркеров
 
 				//получим информацию для всех монет на бирже

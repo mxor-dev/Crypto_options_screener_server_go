@@ -221,12 +221,25 @@ func RunExample(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 
+	fmt.Println("DTE |   Min   |   P25   |  Median |   P75   |   Max   | Current")
+	fmt.Println("----+---------+---------+---------+---------+---------+--------")
 	for _, pt := range cone {
-		fmt.Printf("%2d DTE | Min: %5.1f%% | P25: %5.1f%% | Med: %5.1f%% | P75: %5.1f%% | Max: %5.1f%% | Cur: %5.1f%%\n",
+		fmt.Printf("%3d | %6.1f%% | %6.1f%% | %6.1f%% | %6.1f%% | %6.1f%% | %6.1f%%\n",
 			pt.DTE, pt.Min, pt.P25, pt.Median, pt.P75, pt.Max, pt.Current)
 	}
 
-	// seriesMap[1], seriesMap[7], seriesMap[30] уже готовы для следующего шага (HAR-RV)
-	_ = seriesMap
+	forecasts, err := PredictHARRV(seriesMap, []int{1, 3, 7})
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("\nHAR-RV Forecast:")
+	fmt.Println("Horizon | Forecast RV |   b0   |  b_1d  |  b_7d  |  b_30d")
+	fmt.Println("--------+-------------+--------+--------+--------+--------")
+	for _, f := range forecasts {
+		fmt.Printf("%5d d | %9.1f%% | %6.3f | %6.3f | %6.3f | %6.3f\n",
+			f.HorizonDays, f.ForecastRV, f.Weights[0], f.Weights[1], f.Weights[2], f.Weights[3])
+	}
+
 	return nil
 }

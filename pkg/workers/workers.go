@@ -813,16 +813,29 @@ func GetExangeStateTimer(ctx context.Context, exchange *shared.Exchange, deltaTi
 		//если тикер дал тик
 		case <-ticker.C:
 
-			var KlineDataMapKeys []string
+			//тип данных для отображения ключа kline и времени до удаления
+			type KlinesRequsted struct {
+				Key        string
+				DeleteTime time.Time
+			}
 
-			exchange.AllKlineData.RLock()
+			var klinesRequsted []KlinesRequsted
+
+			// var KlineDataMapKeys []string
+
+			exchange.AllKlineData.Lock()
 			KlineDataMap := exchange.AllKlineData.KlineDataMap
 			for key := range KlineDataMap {
-				KlineDataMapKeys = append(KlineDataMapKeys, key)
-			}
-			exchange.AllKlineData.RUnlock()
+				// KlineDataMapKeys = append(KlineDataMapKeys, key)
 
-			slog.Debug("Запрашиваемые Klines", "ExchangeName", exchange.ExchangeName, "KlineDataMapKeys", KlineDataMapKeys)
+				KlineDataMap[key].Lock()
+				klinesRequsted = append(klinesRequsted, KlinesRequsted{Key: key, DeleteTime: KlineDataMap[key].KlineData.DeleteTime})
+				KlineDataMap[key].Unlock()
+			}
+			exchange.AllKlineData.Unlock()
+
+			// slog.Debug("Запрашиваемые Klines", "ExchangeName", exchange.ExchangeName, "KlineDataMapKeys", KlineDataMapKeys)
+			slog.Debug("Запрашиваемые Klines", "ExchangeName", exchange.ExchangeName, "timesToDelete", klinesRequsted)
 
 			//для подключенных вебсокетов
 			for baseEndPoint := range exchange.Ws {

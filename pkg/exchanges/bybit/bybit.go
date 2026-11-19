@@ -554,7 +554,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				}
 				exchange.AllSymbols[symbol].TickersData.Unlock()
 
-				slog.Info("Получены данные spotTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol+"USDT", "category", "spot")
+				// slog.Info("Получены данные spotTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol+"USDT", "category", "spot")
 			}
 
 			//сделаем паузу между запросами
@@ -629,7 +629,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				FuturesContractNameArr := exchange.AllSymbols[symbol].Info.SymbolInfo.FuturesContractNameArr
 				exchange.AllSymbols[symbol].Info.Unlock()
 
-				slog.Info("Список фьючерсов", "exchangeName", exchange.ExchangeName, "symbol", symbol, "FuturesContractNameArr", FuturesContractNameArr)
+				// slog.Info("Список фьючерсов", "exchangeName", exchange.ExchangeName, "symbol", symbol, "FuturesContractNameArr", FuturesContractNameArr)
 
 				//локальный массив для данных фьючерсов
 				localFuturesTickersArr := []shared.TickersDataFutures{}
@@ -704,7 +704,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 				}
 				exchange.AllSymbols[symbol].TickersData.Unlock()
 
-				slog.Info("Получены данные linearTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol, "category", "linear")
+				// slog.Info("Получены данные linearTickers", "exchangeName", exchange.ExchangeName, "symbol", symbol, "category", "linear")
 			}
 
 			//сделаем паузу между запросами
@@ -1329,11 +1329,11 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 			exchange.AllSymbols[symbol].TickersData.IndexPrice = indexPriceStr
 			exchange.AllSymbols[symbol].TickersData.Options = localAllOptionsTickers
 			exchange.AllSymbols[symbol].TickersData.Ts = time.Now().UTC()
-			OptionsLen := len(exchange.AllSymbols[symbol].TickersData.Options)
+			// OptionsLen := len(exchange.AllSymbols[symbol].TickersData.Options)
 			// slog.Error("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].TickersData.Options)
 			exchange.AllSymbols[symbol].TickersData.Unlock()
 
-			slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "OptionsLen", OptionsLen)
+			// slog.Info("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "OptionsLen", OptionsLen)
 		}
 	}
 
@@ -1372,7 +1372,7 @@ func (b *BybitClient) WsPingTimer(ctx context.Context, exchange *shared.Exchange
 			// Отправляем сообщение в канал управления ws
 			exchange.Ws[wsKey].CmdChan <- cmdMsg
 
-			slog.Debug("Ws на сервер отправлен запрос ping", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
+			// slog.Debug("Ws на сервер отправлен запрос ping", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
 		case <-stopChan:
 
 			slog.Info("Ws ping воркер остановлен по сигналу", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
@@ -1518,7 +1518,23 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 			//ищем карту
 			klineDataMu, ok := exchange.AllKlineData.KlineDataMap[key]
 			if !ok {
+				//если данных kline нет (они были удалены по истечению времени) то и вебсокет не нужен
 				slog.Error("Ошибка поиска записи kline", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key)
+
+				//возьмем вебсокет
+				ws := exchange.Ws[wsKey]
+
+				//сформируем команду
+				cmdMsg := shared.CmdChanMsg{
+					ID:         exchange.GenID.Next(),
+					Action:     "unsubscribe",
+					Topic:      resp.Topic,
+					DeleteTime: time.Now().Add(exchange.FetchIntervals.WsCmdMsgDeleteDelta),
+				}
+
+				// Отправляем команду в канал управления ws
+				ws.CmdChan <- cmdMsg
+
 				return // Теперь тут RUnlock() вызовется автоматически благодаря defer! Никакого дедлока!
 			}
 
@@ -1535,8 +1551,8 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 			klineDataMu.KlineData.Ts = time.Now().UTC()
 			klineDataMu.Unlock()
 
-			slog.Debug("Пришли данные", "resp.Data", resp.Data)
-			slog.Debug("Ws пришла last_candle", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key, "klines[0]", klines[0])
+			// slog.Debug("Пришли данные", "resp.Data", resp.Data)
+			// slog.Debug("Ws пришла last_candle", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key, "klines[0]", klines[0])
 			return
 		}
 	}
