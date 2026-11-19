@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -382,7 +383,7 @@ func (b *BybitClient) GetSymbolInfo(symbol string, RestDataGetInterval time.Dura
 }
 
 // получает данные kline
-func (b *BybitClient) GetKline(contract string, category string, interval string, limit string) ([][]string, error) {
+func (b *BybitClient) GetKline(contract string, category string, interval string, start string, end string, limit string) ([][]string, error) {
 
 	slog.Info("Запрос данных kline", "fun", "GetKline", "ExchangeName", b.ExchangeName, "contract", contract, "category", category, "interval", interval)
 
@@ -395,13 +396,31 @@ func (b *BybitClient) GetKline(contract string, category string, interval string
 		categoryConverted = "linear"
 	}
 
-	//сформируем строку запроса для линейных инструментов
-	url := fmt.Sprintf("%s/v5/market/kline?symbol=%s&category=%s&interval=%s&limit=%s", baseEndPont, contract, categoryConverted, intervalConverted, limit)
+	//составим параметры
+	params := url.Values{}
+	params.Add("symbol", contract)
+	params.Add("category", categoryConverted)
+	params.Add("interval", intervalConverted)
+
+	if start != "" {
+		params.Add("start", start)
+	}
+	if end != "" {
+		params.Add("end", end)
+	}
+	if limit != "" {
+		params.Add("limit", limit)
+	}
+
+	var url string
+
+	//сформируем строку запроса для линейных инструментов со всеми параметрами
+	fullUrl := fmt.Sprintf("%s/v5/market/kline?%s", baseEndPont, params.Encode())
 
 	//выполним запрос
-	respSpot, err := http.Get(url)
+	respSpot, err := http.Get(fullUrl)
 	if err != nil {
-		return nil, fmt.Errorf("Ошбика Get запроса %s: %w", url, err)
+		return nil, fmt.Errorf("Ошбика Get запроса %s: %w", fullUrl, err)
 	}
 	defer respSpot.Body.Close()
 
@@ -453,7 +472,7 @@ func (b *BybitClient) GetKline(contract string, category string, interval string
 	}
 
 	//поменяем порядок свечей
-	slices.Reverse(TOHLC)
+	// slices.Reverse(TOHLC) ---разворот делаем потом чтобы сохранить возможность получения многих данных
 
 	slog.Info("Получены данные kline", "ExchangeName", b.ExchangeName, "contract", contract, "category", category, "interval", interval, "len(result.KlineData)", len(TOHLC))
 
@@ -1087,8 +1106,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 
 					//минимум линии и IV для 25 дельты
 					var minMarkIvStr [2]string
-					var indexPriceIvStr [2]string
-					var nearestIvToIndexPriceStr [2]string
+					var indexPriceIvStr string
 					var callIv25DeltaStr [2]string
 					var putIv25DeltaStr [2]string
 					var skewIv25DeltaStr string
@@ -1145,7 +1163,6 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						//********** IndexPriceIv **********
 
 						interpolatedMarkIv := 0.0
-						nearestIvToIndexPriceIndex := 0
 
 						//пройдемся по массиву страйков
 						for j := 1; j < len(strikesFloatArr); j++ {
@@ -1160,21 +1177,11 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 									interpolatedMarkIv = markIvFloatArr[j-1]
 								}
 
-								//определим индекс ближайшего страйка по дельте
-								if math.Abs(indexPrice-strikesFloatArr[j-1]) <= math.Abs(indexPrice-strikesFloatArr[j-1]) {
-									//запишем индекс
-									nearestIvToIndexPriceIndex = j - 1
-								} else {
-									//запишем индекс
-									nearestIvToIndexPriceIndex = j
-								}
-
 								break
 							}
 						}
 
-						indexPriceIvStr = [2]string{strconv.FormatFloat(indexPrice, 'f', 4, 64), strconv.FormatFloat(interpolatedMarkIv, 'f', 4, 64)}
-						nearestIvToIndexPriceStr = [2]string{localOptionsLines.Strikes[nearestIvToIndexPriceIndex], localOptionsLines.MarkIv[nearestIvToIndexPriceIndex]}
+						indexPriceIvStr = strconv.FormatFloat(interpolatedMarkIv, 'f', 4, 64)
 
 						//********* callIv25DeltaStr putIv25DeltaStr skewIv25DeltaStr ***********
 
@@ -1280,12 +1287,11 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 						ForwardPrice: underlyingPrice,
 						ExpiryTime:   strconv.FormatInt(expiryTime.UnixMilli(), 10),
 
-						MinMarkIv:             minMarkIvStr,
-						IndexPriceIv:          indexPriceIvStr,
-						NearestIvToIndexPrice: nearestIvToIndexPriceStr,
-						CallIv25Delta:         callIv25DeltaStr,
-						PutIv25Delta:          putIv25DeltaStr,
-						SkewIv25Delta:         skewIv25DeltaStr,
+						MinMarkIv:     minMarkIvStr,
+						IndexPriceIv:  indexPriceIvStr,
+						CallIv25Delta: callIv25DeltaStr,
+						PutIv25Delta:  putIv25DeltaStr,
+						SkewIv25Delta: skewIv25DeltaStr,
 
 						OptionsLines: localOptionsLines,
 					}

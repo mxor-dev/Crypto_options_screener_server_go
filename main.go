@@ -16,6 +16,7 @@ import (
 
 	"crypto_options_screener/pkg/exchanges/bybit"
 	"crypto_options_screener/pkg/shared"
+	"crypto_options_screener/pkg/volatility"
 	"crypto_options_screener/pkg/workers"
 
 	"github.com/gin-contrib/cors"
@@ -129,8 +130,9 @@ func main() {
 				// "XRP":  {Symbol: "XRP", FetchFilter: []string{"linear", "option"}},
 			},
 			FetchIntervals: shared.FetchIntervals{
-				RestDataGetInterval:    50 * time.Millisecond,
-				TickersDataGetInterval: 10 * time.Second,
+				RestDataGetInterval:          50 * time.Millisecond,
+				HistoryKlinesDataGetInterval: 1 * time.Second,
+				TickersDataGetInterval:       10 * time.Second,
 
 				// KlineDeleteDeltaTime : 30 * time.Second,
 				// KlineDeleteDeltaTime: 1 * time.Minute,
@@ -231,6 +233,17 @@ func main() {
 
 			//если клинет для биржи создан
 			if allExchanges[exKey].Client != nil {
+				//тесты
+
+				//просчет волатильности
+				err = volatility.RunExample(ctx, pool)
+				if err != nil {
+					slog.Error("Ошибка при определении волатильности", "err", err)
+				}
+
+				// workers.GetKlineDataHistory(pool, "kline_data_15m", allExchanges["Bybit"], "BTCUSDT", "perpetual", "15m", 35000)
+
+				os.Exit(0)
 				//запускаем воркеров
 
 				//получим информацию для всех монет на бирже
@@ -817,12 +830,11 @@ func main() {
 
 				ForwardPrice: options[i].ForwardPrice,
 
-				MinMarkIv:             options[i].MinMarkIv,
-				IndexPriceIv:          options[i].IndexPriceIv,
-				NearestIvToIndexPrice: options[i].NearestIvToIndexPrice,
-				CallIv25Delta:         options[i].CallIv25Delta,
-				PutIv25Delta:          options[i].PutIv25Delta,
-				SkewIv25Delta:         options[i].SkewIv25Delta,
+				MinMarkIv:     options[i].MinMarkIv,
+				IndexPriceIv:  options[i].IndexPriceIv,
+				CallIv25Delta: options[i].CallIv25Delta,
+				PutIv25Delta:  options[i].PutIv25Delta,
+				SkewIv25Delta: options[i].SkewIv25Delta,
 
 				OptionsLines: newOptionsLines,
 			}

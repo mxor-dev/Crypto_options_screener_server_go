@@ -192,8 +192,9 @@ func (k *KlineDataMu) GetKlineData() KlineData {
 
 // интервалы запроса данных
 type FetchIntervals struct {
-	RestDataGetInterval    time.Duration
-	TickersDataGetInterval time.Duration
+	RestDataGetInterval          time.Duration
+	HistoryKlinesDataGetInterval time.Duration
+	TickersDataGetInterval       time.Duration
 
 	KlineDeleteDeltaTime time.Duration
 

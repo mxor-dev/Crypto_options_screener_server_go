@@ -3,14 +3,17 @@ package workers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"crypto_options_screener/pkg/shared"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -86,7 +89,7 @@ func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
 func GetKlineData(exchange *shared.Exchange, symbol string, contract string, category string, interval string) {
 
 	//получим данные
-	klines, err := exchange.Client.GetKline(contract, category, interval, exchange.KlineLimit)
+	klines, err := exchange.Client.GetKline(contract, category, interval, "", "", exchange.KlineLimit)
 	if err != nil {
 		slog.Error("Ошибка при получении kline", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval, "err", err)
 		return
@@ -97,6 +100,9 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 		slog.Warn("Длина данных len(klineData.Klines) == 0", "exchangeName", exchange.ExchangeName, "symbol", symbol, "contract", contract, "category", category, "interval", interval)
 		return
 	}
+
+	//размернем данные klines - делаем жто сдеь чтобы в других функциях иметь возможность наккапливать исторические данные
+	slices.Reverse(klines)
 
 	//получим ключ
 	key, err := exchange.Client.MakeKlineKey(contract, category, interval)
@@ -157,6 +163,168 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 
 	KlineData.Unlock()
 
+}
+
+// получает длинные данные kline и сохраняет их в бд
+func GetKlineDataHistory(pool *pgxpool.Pool, table_name string, exchange *shared.Exchange, contract string, category string, interval string, total_length int) {
+	var allKlines [][]string
+	var currentEnd string
+
+	for len(allKlines) < total_length {
+		klines, err := exchange.Client.GetKline(contract, category, interval, "", currentEnd, exchange.KlineLimit)
+		if err != nil {
+			slog.Error("Ошибка при получении kline", "exchangeName", exchange.ExchangeName, "contract", contract, "category", category, "interval", interval, "err", err)
+			return
+		}
+
+		if len(klines) == 0 {
+			slog.Info("Достигнут конец доступной истории свечей", "exchangeName", exchange.ExchangeName, "contract", contract, "fetched", len(allKlines))
+			break
+		}
+
+		// Самая старая свеча в пачке (последний индекс)
+		oldestCandle := klines[len(klines)-1]
+		if len(oldestCandle) == 0 {
+			slog.Error("Некорректный формат свечи от биржи", "contract", contract)
+			return
+		}
+
+		oldestTimestamp, err := strconv.ParseInt(oldestCandle[0], 10, 64)
+		if err != nil {
+			slog.Error("Ошибка парсинга timestamp свечи", "exchangeName", exchange.ExchangeName, "contract", contract, "timestamp", oldestCandle[0], "err", err)
+			return
+		}
+
+		allKlines = append(allKlines, klines...)
+		currentEnd = strconv.FormatInt(oldestTimestamp-1, 10)
+		time.Sleep(exchange.FetchIntervals.HistoryKlinesDataGetInterval)
+	}
+
+	if len(allKlines) > total_length {
+		allKlines = allKlines[:total_length]
+	}
+
+	if len(allKlines) == 0 {
+		return
+	}
+
+	// Разворачиваем стандартным пакетом slices (от старых к новым)
+	slices.Reverse(allKlines)
+
+	type klineRecord struct {
+		tsMs     int64
+		openTime time.Time
+		open     float64
+		high     float64
+		low      float64
+		close    float64
+	}
+
+	// Конвертируем весь строковый массив в числовое представление
+	parsedKlines := make([]klineRecord, 0, len(allKlines))
+
+	for i, k := range allKlines {
+		if len(k) < 5 {
+			slog.Error("Некорректная длина массива свечи (ожидалось >= 5)", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "kline", k)
+			return
+		}
+
+		tsMs, err := strconv.ParseInt(k[0], 10, 64)
+		if err != nil {
+			slog.Error("Ошибка парсинга open_time", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "val", k[0], "err", err)
+			return
+		}
+
+		openPrice, err := strconv.ParseFloat(k[1], 64)
+		if err != nil {
+			slog.Error("Ошибка парсинга open", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "val", k[1], "err", err)
+			return
+		}
+
+		highPrice, err := strconv.ParseFloat(k[2], 64)
+		if err != nil {
+			slog.Error("Ошибка парсинга high", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "val", k[2], "err", err)
+			return
+		}
+
+		lowPrice, err := strconv.ParseFloat(k[3], 64)
+		if err != nil {
+			slog.Error("Ошибка парсинга low", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "val", k[3], "err", err)
+			return
+		}
+
+		closePrice, err := strconv.ParseFloat(k[4], 64)
+		if err != nil {
+			slog.Error("Ошибка парсинга close", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "val", k[4], "err", err)
+			return
+		}
+
+		parsedKlines = append(parsedKlines, klineRecord{
+			tsMs:     tsMs,
+			openTime: time.UnixMilli(tsMs).UTC(),
+			open:     openPrice,
+			high:     highPrice,
+			low:      lowPrice,
+			close:    closePrice,
+		})
+	}
+
+	// Проверяем массив свечей на гладкость и отсутствие разрывов
+	if len(parsedKlines) >= 2 {
+		expectedDelta := parsedKlines[1].tsMs - parsedKlines[0].tsMs
+		if expectedDelta <= 0 {
+			slog.Error("Некорректный порядок или дубликат времени в первых свечах",
+				"exchangeName", exchange.ExchangeName,
+				"contract", contract,
+				"ts0", parsedKlines[0].tsMs,
+				"ts1", parsedKlines[1].tsMs,
+			)
+			return
+		}
+
+		for i := 1; i < len(parsedKlines); i++ {
+			actualDelta := parsedKlines[i].tsMs - parsedKlines[i-1].tsMs
+			if actualDelta != expectedDelta {
+				slog.Error("Обнаружен разрыв в данных свечей",
+					"exchangeName", exchange.ExchangeName,
+					"contract", contract,
+					"index", i,
+					"prevTime", parsedKlines[i-1].openTime,
+					"currTime", parsedKlines[i].openTime,
+					"expectedDeltaMs", expectedDelta,
+					"actualDeltaMs", actualDelta,
+				)
+				return
+			}
+		}
+	}
+
+	// Составляем батч из проверенного числового массива и отправляем в БД
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	query := fmt.Sprintf(`
+		INSERT INTO %s (exchange, contract, open_time, open, high, low, close)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (exchange, contract, open_time) DO NOTHING
+	`, pgx.Identifier{table_name}.Sanitize())
+
+	batch := &pgx.Batch{}
+	for _, rec := range parsedKlines {
+		batch.Queue(query, exchange.ExchangeName, contract, rec.openTime, rec.open, rec.high, rec.low, rec.close)
+	}
+
+	br := pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for i := 0; i < batch.Len(); i++ {
+		if _, err := br.Exec(); err != nil {
+			slog.Error("Ошибка при вставке свечи в БД", "exchangeName", exchange.ExchangeName, "contract", contract, "table", table_name, "err", err)
+			return
+		}
+	}
+
+	slog.Info("Успешно загружена и сохранена история свечей", "exchangeName", exchange.ExchangeName, "contract", contract, "table", table_name, "count", len(parsedKlines))
 }
 
 //------- работа с БД------
