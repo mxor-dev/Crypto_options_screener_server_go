@@ -275,27 +275,40 @@ type FeeRates struct {
 }
 
 type RvConeDataMu struct {
-	Contract   string
-	Category   string
-	Interval   string
-	Limit      int
-	ConePoints []ConePoint
+	Contract string
+	Category string
+	Interval string
+	Limit    int
+	// ConePoints []ConePoint
+	ConeLines  ConeLines
 	SeriesMap  map[int][]float64
 	UpdateTime time.Time
 	sync.RWMutex
 }
 
 // метрики конуса для конкретного горизонта (DTE)
-type ConePoint struct {
-	DTE     int     `json:"dte"`
-	Min     float64 `json:"min"`
-	P10     float64 `json:"p10"`
-	P25     float64 `json:"p25"`
-	Median  float64 `json:"median"`
-	P75     float64 `json:"p75"`
-	P90     float64 `json:"p90"`
-	Max     float64 `json:"max"`
-	Current float64 `json:"current"`
+// type ConePoint struct {
+// 	DTE     int     `json:"dte"`
+// 	Min     float64 `json:"min"`
+// 	P10     float64 `json:"p10"`
+// 	P25     float64 `json:"p25"`
+// 	Median  float64 `json:"median"`
+// 	P75     float64 `json:"p75"`
+// 	P90     float64 `json:"p90"`
+// 	Max     float64 `json:"max"`
+// 	Current float64 `json:"current"`
+// }
+
+type ConeLines struct {
+	DTE     []int     `json:"dte"`
+	Min     []float64 `json:"min"`
+	P10     []float64 `json:"p10"`
+	P25     []float64 `json:"p25"`
+	Median  []float64 `json:"median"`
+	P75     []float64 `json:"p75"`
+	P90     []float64 `json:"p90"`
+	Max     []float64 `json:"max"`
+	Current []float64 `json:"current"`
 }
 
 // одна свечка OHLC для хранения в бд

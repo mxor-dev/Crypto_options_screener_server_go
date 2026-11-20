@@ -57,10 +57,12 @@ func LoadCandles(ctx context.Context, pool *pgxpool.Pool, exchange, contract str
 
 // Строит конус волатильности для заданных DTE (например, []int{1, 3, 7, 14, 30})
 // Также возвращает карту полных временных рядов RV по каждому DTE (пригодится далее для HAR-RV)
-func CalculateVolatilityCone(candles []shared.Candle, dtes []int) ([]shared.ConePoint, map[int][]float64, error) {
+// Строит конус волатильности для заданных DTE (например, []int{1, 3, 7, 14, 30})
+// Также возвращает карту полных временных рядов RV по каждому DTE (пригодится далее для HAR-RV)
+func CalculateVolatilityCone(candles []shared.Candle, dtes []int) (shared.ConeLines, map[int][]float64, error) {
 	m := len(candles)
 	if m < 2 {
-		return nil, nil, fmt.Errorf("Ошибка недостаточно свечей: %d", m)
+		return shared.ConeLines{}, nil, fmt.Errorf("Ошибка недостаточно свечей: %d", m)
 	}
 
 	// Количество шагов доходности = m - 1
@@ -82,7 +84,7 @@ func CalculateVolatilityCone(candles []shared.Candle, dtes []int) ([]shared.Cone
 
 		// Защита от нулевых цен
 		if prevClose <= 0 || o <= 0 || h <= 0 || l <= 0 || c <= 0 {
-			return nil, nil, fmt.Errorf("некорректная цена (<= 0) на индексе %d", i)
+			return shared.ConeLines{}, nil, fmt.Errorf("некорректная цена (<= 0) на индексе %d", i)
 		}
 
 		oi := math.Log(o / prevClose)
@@ -98,13 +100,24 @@ func CalculateVolatilityCone(candles []shared.Candle, dtes []int) ([]shared.Cone
 		prefRS[i] = prefRS[i-1] + rsi
 	}
 
-	cone := make([]shared.ConePoint, 0, len(dtes))
-	seriesMap := make(map[int][]float64, len(dtes))
+	nDtes := len(dtes)
+	lines := shared.ConeLines{
+		DTE:     make([]int, nDtes),
+		Min:     make([]float64, nDtes),
+		P10:     make([]float64, nDtes),
+		P25:     make([]float64, nDtes),
+		Median:  make([]float64, nDtes),
+		P75:     make([]float64, nDtes),
+		P90:     make([]float64, nDtes),
+		Max:     make([]float64, nDtes),
+		Current: make([]float64, nDtes),
+	}
+	seriesMap := make(map[int][]float64, nDtes)
 
-	for _, dte := range dtes {
+	for i, dte := range dtes {
 		window := dte * candlesPerDay
 		if window < 2 || window > nSteps {
-			return nil, nil, fmt.Errorf("недостаточно данных для %d DTE (нужно минимум %d свечей, есть %d)", dte, window+1, m)
+			return shared.ConeLines{}, nil, fmt.Errorf("недостаточно данных для %d DTE (нужно минимум %d свечей, есть %d)", dte, window+1, m)
 		}
 
 		nFloat := float64(window)
@@ -148,20 +161,18 @@ func CalculateVolatilityCone(candles []shared.Candle, dtes []int) ([]shared.Cone
 		sorted := slices.Clone(rvSeries)
 		slices.Sort(sorted)
 
-		cone = append(cone, shared.ConePoint{
-			DTE:     dte,
-			Min:     sorted[0],
-			P10:     percentile(sorted, 0.10),
-			P25:     percentile(sorted, 0.25),
-			Median:  percentile(sorted, 0.50),
-			P75:     percentile(sorted, 0.75),
-			P90:     percentile(sorted, 0.90),
-			Max:     sorted[len(sorted)-1],
-			Current: currentRV,
-		})
+		lines.DTE[i] = dte
+		lines.Min[i] = sorted[0]
+		lines.P10[i] = percentile(sorted, 0.10)
+		lines.P25[i] = percentile(sorted, 0.25)
+		lines.Median[i] = percentile(sorted, 0.50)
+		lines.P75[i] = percentile(sorted, 0.75)
+		lines.P90[i] = percentile(sorted, 0.90)
+		lines.Max[i] = sorted[len(sorted)-1]
+		lines.Current[i] = currentRV
 	}
 
-	return cone, seriesMap, nil
+	return lines, seriesMap, nil
 }
 
 // вычисляет квантиль с линейной интерполяцией на отсортированном слайсе
@@ -188,36 +199,36 @@ func percentile(sorted []float64, q float64) float64 {
 // пример использования
 func RunExample(ctx context.Context, pool *pgxpool.Pool) error {
 
-	candles, err := LoadCandles(ctx, pool, "Bybit", "BTCUSDT", 35000)
-	if err != nil {
-		return err
-	}
+	// candles, err := LoadCandles(ctx, pool, "Bybit", "BTCUSDT", 35000)
+	// if err != nil {
+	// 	return err
+	// }
 
-	dtes := []int{1, 3, 7, 14, 30}
-	cone, seriesMap, err := CalculateVolatilityCone(candles, dtes)
-	if err != nil {
-		return err
-	}
+	// dtes := []int{1, 3, 7, 14, 30}
+	// cone, seriesMap, err := CalculateVolatilityCone(candles, dtes)
+	// if err != nil {
+	// 	return err
+	// }
 
-	fmt.Println("DTE |   Min   |   P25   |  Median |   P75   |   Max   | Current")
-	fmt.Println("----+---------+---------+---------+---------+---------+--------")
-	for _, pt := range cone {
-		fmt.Printf("%3d | %6.1f%% | %6.1f%% | %6.1f%% | %6.1f%% | %6.1f%% | %6.1f%%\n",
-			pt.DTE, pt.Min, pt.P25, pt.Median, pt.P75, pt.Max, pt.Current)
-	}
+	// fmt.Println("DTE |   Min   |   P25   |  Median |   P75   |   Max   | Current")
+	// fmt.Println("----+---------+---------+---------+---------+---------+--------")
+	// for _, pt := range cone {
+	// 	fmt.Printf("%3d | %6.1f%% | %6.1f%% | %6.1f%% | %6.1f%% | %6.1f%% | %6.1f%%\n",
+	// 		pt.DTE, pt.Min, pt.P25, pt.Median, pt.P75, pt.Max, pt.Current)
+	// }
 
-	forecasts, err := PredictHARRV(seriesMap, []int{1, 3, 7})
-	if err != nil {
-		return err
-	}
+	// forecasts, err := PredictHARRV(seriesMap, []int{1, 3, 7})
+	// if err != nil {
+	// 	return err
+	// }
 
-	fmt.Println("\nHAR-RV Forecast:")
-	fmt.Println("Horizon | Forecast RV |   b0   |  b_1d  |  b_7d  |  b_30d")
-	fmt.Println("--------+-------------+--------+--------+--------+--------")
-	for _, f := range forecasts {
-		fmt.Printf("%5d d | %9.1f%% | %6.3f | %6.3f | %6.3f | %6.3f\n",
-			f.HorizonDays, f.ForecastRV, f.Weights[0], f.Weights[1], f.Weights[2], f.Weights[3])
-	}
+	// fmt.Println("\nHAR-RV Forecast:")
+	// fmt.Println("Horizon | Forecast RV |   b0   |  b_1d  |  b_7d  |  b_30d")
+	// fmt.Println("--------+-------------+--------+--------+--------+--------")
+	// for _, f := range forecasts {
+	// 	fmt.Printf("%5d d | %9.1f%% | %6.3f | %6.3f | %6.3f | %6.3f\n",
+	// 		f.HorizonDays, f.ForecastRV, f.Weights[0], f.Weights[1], f.Weights[2], f.Weights[3])
+	// }
 
 	return nil
 }

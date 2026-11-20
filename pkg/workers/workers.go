@@ -639,7 +639,7 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 			interval := exchange.AllSymbols[i].RvConeData.Interval
 			limit := exchange.AllSymbols[i].RvConeData.Limit
 			updateTime := exchange.AllSymbols[i].RvConeData.UpdateTime
-			hasData := len(exchange.AllSymbols[i].RvConeData.ConePoints) > 0
+			hasData := len(exchange.AllSymbols[i].RvConeData.ConeLines.DTE) > 0
 			exchange.AllSymbols[i].RvConeData.RUnlock()
 
 			if contract == "" || category == "" || interval == "" {
@@ -727,7 +727,7 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 
 			// Запишем полученные данные и время обновления
 			exchange.AllSymbols[i].RvConeData.Lock()
-			exchange.AllSymbols[i].RvConeData.ConePoints = cone
+			exchange.AllSymbols[i].RvConeData.ConeLines = cone
 			exchange.AllSymbols[i].RvConeData.SeriesMap = seriesMap
 			exchange.AllSymbols[i].RvConeData.UpdateTime = time.Now().UTC()
 			exchange.AllSymbols[i].RvConeData.Unlock()

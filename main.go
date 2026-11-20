@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -918,13 +919,13 @@ func main() {
 		}
 
 		type RvConeResponse struct {
-			Contract   string             `json:"contract"`
-			Category   string             `json:"category"`
-			Interval   string             `json:"interval"`
-			Limit      int                `json:"limit"`
-			ConePoints []shared.ConePoint `json:"cone_points"`
-			SeriesMap  map[int][]float64  `json:"series_map"`
-			UpdateTime time.Time          `json:"update_time"`
+			Contract  string           `json:"contract"`
+			Category  string           `json:"category"`
+			Interval  string           `json:"interval"`
+			Limit     int              `json:"limit"`
+			ConeLines shared.ConeLines `json:"cone_lines"`
+			// SeriesMap  map[int][]float64  `json:"series_map"`
+			UpdateTime int64 `json:"update_time"`
 		}
 
 		// Запросим необходимые данные
@@ -935,28 +936,38 @@ func main() {
 		limit := symbolData.RvConeData.Limit
 		updateTime := symbolData.RvConeData.UpdateTime
 
-		// Копируем слайс ConePoints, чтобы безопасно использовать его после RUnlock()
-		conePoints := make([]shared.ConePoint, len(symbolData.RvConeData.ConePoints))
-		copy(conePoints, symbolData.RvConeData.ConePoints)
+		// Копируем все слайсы внутри структуры ConeLines, чтобы безопасно использовать их после RUnlock()
+		src := symbolData.RvConeData.ConeLines
+		coneLines := shared.ConeLines{
+			DTE:     slices.Clone(src.DTE),
+			Min:     slices.Clone(src.Min),
+			P10:     slices.Clone(src.P10),
+			P25:     slices.Clone(src.P25),
+			Median:  slices.Clone(src.Median),
+			P75:     slices.Clone(src.P75),
+			P90:     slices.Clone(src.P90),
+			Max:     slices.Clone(src.Max),
+			Current: slices.Clone(src.Current),
+		}
 
 		// Глубокое копирование мапы SeriesMap (включая вложенные слайсы []float64)
-		seriesMap := make(map[int][]float64, len(symbolData.RvConeData.SeriesMap))
-		for k, v := range symbolData.RvConeData.SeriesMap {
-			vals := make([]float64, len(v))
-			copy(vals, v)
-			seriesMap[k] = vals
-		}
+		// seriesMap := make(map[int][]float64, len(symbolData.RvConeData.SeriesMap))
+		// for k, v := range symbolData.RvConeData.SeriesMap {
+		// 	vals := make([]float64, len(v))
+		// 	copy(vals, v)
+		// 	seriesMap[k] = vals
+		// }
 		symbolData.RvConeData.RUnlock()
 
 		// Собираем итоговую структуру ответа
 		rvConeResponse := RvConeResponse{
-			Contract:   contract,
-			Category:   category,
-			Interval:   interval,
-			Limit:      limit,
-			ConePoints: conePoints,
-			SeriesMap:  seriesMap,
-			UpdateTime: updateTime,
+			Contract:  contract,
+			Category:  category,
+			Interval:  interval,
+			Limit:     limit,
+			ConeLines: coneLines,
+			// SeriesMap:  seriesMap,
+			UpdateTime: updateTime.UnixMilli(),
 		}
 
 		// Отдаем ответ
