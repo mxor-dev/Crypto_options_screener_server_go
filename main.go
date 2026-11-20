@@ -871,7 +871,7 @@ func main() {
 	r.POST("/api/rv_cone_data", func(c *gin.Context) {
 		type RvConeRequest struct {
 			ExchangeName string `json:"exchange_name" binding:"required"`
-			Contract     string `json:"symbol" binding:"required"`
+			Symbol       string `json:"symbol" binding:"required"`
 		}
 
 		var req RvConeRequest
@@ -888,25 +888,75 @@ func main() {
 		slog.Debug("Получен запрос POST", "url", "/api/rv_cone_data", "req", req)
 
 		//проверим есть ли такая биржа
-		// exchange, ok := allExchanges[req.ExchangeName]
-		// if !ok {
-		// 	slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/kline_data", "req", req)
+		exchange, ok := allExchanges[req.ExchangeName]
+		if !ok {
+			slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/kline_data", "req", req)
 
-		// 	// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
-		// 	c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой биржи не существует"})
-		// 	return
-		// }
+			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой биржи не существует"})
+			return
+		}
 
-		// candles, err := LoadCandles(ctx, pool, "Bybit", "BTCUSDT", 35000)
-		// if err != nil {
-		// 	return err
-		// }
+		//проверим есть ли такой символ
+		symbolData, ok := exchange.AllSymbols[req.Symbol]
+		if !ok {
+			slog.Error("Ошибка в запросе: такого символа не существует", "url", "/api/kline_data", "req", req)
 
-		// dtes := []int{1, 3, 7, 14, 30}
-		// cone, seriesMap, err := CalculateVolatilityCone(candles, dtes)
-		// if err != nil {
-		// 	return err
-		// }
+			// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой символ не существует"})
+			return
+		}
+
+		type RvConeResponse struct {
+			Contract   string             `json:"contract"`
+			Category   string             `json:"category"`
+			Interval   string             `json:"interval"`
+			Limit      int                `json:"limit"`
+			ConePoints []shared.ConePoint `json:"cone_points"`
+			SeriesMap  map[int][]float64  `json:"series_map"`
+			UpdateTime time.Time          `json:"update_time"`
+		}
+
+		// Запросим необходимые данные
+		symbolData.RvConeData.RLock()
+		contract := symbolData.RvConeData.Contract
+		category := symbolData.RvConeData.Category
+		interval := symbolData.RvConeData.Interval
+		limit := symbolData.RvConeData.Limit
+		updateTime := symbolData.RvConeData.UpdateTime
+
+		// Копируем слайс ConePoints, чтобы безопасно использовать его после RUnlock()
+		conePoints := make([]shared.ConePoint, len(symbolData.RvConeData.ConePoints))
+		copy(conePoints, symbolData.RvConeData.ConePoints)
+
+		// Глубокое копирование мапы SeriesMap (включая вложенные слайсы []float64)
+		seriesMap := make(map[int][]float64, len(symbolData.RvConeData.SeriesMap))
+		for k, v := range symbolData.RvConeData.SeriesMap {
+			vals := make([]float64, len(v))
+			copy(vals, v)
+			seriesMap[k] = vals
+		}
+		symbolData.RvConeData.RUnlock()
+
+		// Собираем итоговую структуру ответа
+		rvConeResponse := RvConeResponse{
+			Contract:   contract,
+			Category:   category,
+			Interval:   interval,
+			Limit:      limit,
+			ConePoints: conePoints,
+			SeriesMap:  seriesMap,
+			UpdateTime: updateTime,
+		}
+
+		// Отдаем ответ
+		c.JSON(http.StatusOK, gin.H{
+			"status":        "success",
+			"exchange_name": req.ExchangeName,
+			"symbol":        req.Symbol,
+			"rv_cone_data":  rvConeResponse,
+		})
+
 	})
 
 	server := &http.Server{
