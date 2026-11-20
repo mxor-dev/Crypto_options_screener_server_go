@@ -435,7 +435,7 @@ func main() {
 			workers.GetKlineData(exchange, req.Symbol, req.Contract, req.Category, req.Interval)
 
 			//запустим получение данных last_candle
-			exchange.Client.WsSubscribeLastCandle(exchange, req.Contract, req.Category, req.Interval)
+			// exchange.Client.WsSubscribeLastCandle(exchange, req.Contract, req.Category, req.Interval)
 
 			//еще раз обратимя к данным они уже должны быть - предыдущая функция синхранная
 			exchange.AllKlineData.RLock()
@@ -546,7 +546,7 @@ func main() {
 		if !ok {
 			slog.Error("Ошибка при получении данных по ключу", "url", "/api/last_candle", "req", req, "key", key)
 
-			//дадим пустой ответ
+			//дадим ответ и статус noKlineData
 			c.JSON(http.StatusOK, gin.H{
 				"status":      "noKlineData",
 				"last_candle": "",

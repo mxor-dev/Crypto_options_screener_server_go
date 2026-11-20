@@ -1363,6 +1363,7 @@ func (b *BybitClient) WsPingTimer(ctx context.Context, exchange *shared.Exchange
 
 			// составим сообщение ping
 			cmdMsg := shared.CmdChanMsg{
+				WsKey:      wsKey,
 				ID:         "",
 				Action:     "ping",
 				Topic:      "",
@@ -1441,7 +1442,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 			if isFound {
 				//добавим топик в список топиков
 				ws.TopicList = append(ws.TopicList, topic)
-				//удалим команду из списка
+				//удалим команду из списка команд
 				ws.CmdBuffer = slices.Delete(ws.CmdBuffer, idxToDelete, idxToDelete+1)
 			}
 

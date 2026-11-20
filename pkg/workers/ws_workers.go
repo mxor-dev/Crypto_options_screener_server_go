@@ -116,6 +116,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, wsKey string
 						for _, topic := range topicsCopy {
 							//сформируем команду
 							newCmd := shared.CmdChanMsg{
+								WsKey:      wsKey,
 								ID:         exchange.GenID.Next(), //там внутри тоже мьютекс
 								Action:     "subscribe",
 								Topic:      topic,
@@ -181,7 +182,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, wsKey string
 					if err != nil {
 						slog.Error("Ошибка отправки запроса в WS", "cmdMsg", cmdMsg, "req", req, "err", err)
 					}
-					slog.Info("Запрос отправлен в WS", "cmdMsg", cmdMsg, "req", req)
+					slog.Info("WS отправлен запрос ping", "WsKey", cmdMsg.WsKey)
 
 				case "subscribe", "unsubscribe":
 
@@ -208,7 +209,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.Exchange, wsKey string
 					if err != nil {
 						slog.Error("Ошибка отправки запроса в WS", "cmdMsg", cmdMsg, "req", req, "err", err)
 					}
-					slog.Info("Запрос отправлен в WS", "cmdMsg", cmdMsg, "req", req)
+					slog.Info("WS отправлен запрос subsribe", "WsKey", cmdMsg.WsKey, "topic", cmdMsg.Topic)
 				}
 			}
 		}

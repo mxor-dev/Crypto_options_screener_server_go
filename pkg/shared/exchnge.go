@@ -218,6 +218,7 @@ type LastPriceResponse struct {
 }
 
 type CmdChanMsg struct {
+	WsKey      string
 	ID         string
 	Action     string
 	Topic      string
