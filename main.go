@@ -440,7 +440,7 @@ func main() {
 			workers.GetKlineData(exchange, req.Symbol, req.Contract, req.Category, req.Interval)
 
 			//запустим получение данных last_candle
-			// exchange.Client.WsSubscribeLastCandle(exchange, req.Contract, req.Category, req.Interval)
+			exchange.Client.WsSubscribeLastCandle(exchange, req.Contract, req.Category, req.Interval)
 
 			//еще раз обратимя к данным они уже должны быть - предыдущая функция синхранная
 			exchange.AllKlineData.RLock()
@@ -553,9 +553,14 @@ func main() {
 
 			//дадим ответ и статус noKlineData
 			c.JSON(http.StatusOK, gin.H{
-				"status":      "noKlineData",
-				"last_candle": "",
-				"ts":          "",
+				"status":        "noKlineData",
+				"exchange_name": req.ExchangeName,
+				"symbol":        req.Symbol,
+				"contract":      req.Contract,
+				"category":      req.Category,
+				"interval":      req.Interval,
+				"last_candle":   "",
+				"ts":            "",
 			})
 			return
 		}
@@ -570,9 +575,14 @@ func main() {
 
 		//дадим ответ
 		c.JSON(http.StatusOK, gin.H{
-			"status":      "success",
-			"last_candle": lastCandle,
-			"ts":          ts.UnixMilli(),
+			"status":        "success",
+			"exchange_name": req.ExchangeName,
+			"symbol":        req.Symbol,
+			"contract":      req.Contract,
+			"category":      req.Category,
+			"interval":      req.Interval,
+			"last_candle":   lastCandle,
+			"ts":            ts.UnixMilli(),
 		})
 
 		slog.Warn("Отправлена последняя свеча", "url", "/api/last_candle", "req", req, "lastCandle", lastCandle)
