@@ -12,7 +12,7 @@ import (
 )
 
 // запуск универсального вебсокета
-func StartWebSocket(ctx context.Context, exchange *shared.Exchange, wsKey string, baseEndPoint string) error {
+func StartWebSocket(ctx context.Context, exchange *shared.ExchangeData, wsKey string, baseEndPoint string) error {
 	//  канал управления подписками (буферизованный, чтобы не блокировать вызывающий код)
 	cmdChan := make(chan shared.CmdChanMsg, 100)
 

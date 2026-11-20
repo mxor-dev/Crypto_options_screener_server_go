@@ -2,37 +2,15 @@ package volatility
 
 import (
 	"context"
+	"crypto_options_screener/pkg/shared"
 	"fmt"
 	"log/slog"
 	"math"
 	"slices"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// одна 15-минутную свечу из kline_data_15m
-type Candle struct {
-	OpenTime time.Time
-	Open     float64
-	High     float64
-	Low      float64
-	Close    float64
-}
-
-// метрики конуса для конкретного горизонта (DTE)
-type ConePoint struct {
-	DTE     int     `json:"dte"`
-	Min     float64 `json:"min"`
-	P10     float64 `json:"p10"`
-	P25     float64 `json:"p25"`
-	Median  float64 `json:"median"`
-	P75     float64 `json:"p75"`
-	P90     float64 `json:"p90"`
-	Max     float64 `json:"max"`
-	Current float64 `json:"current"`
-}
 
 // константы
 const (
@@ -41,7 +19,7 @@ const (
 )
 
 // LoadCandles выгружает свечи по бирже и монете в хронологическом порядке
-func LoadCandles(ctx context.Context, pool *pgxpool.Pool, exchange, contract string, limit int) ([]Candle, error) {
+func LoadCandles(ctx context.Context, pool *pgxpool.Pool, exchange, contract string, limit int) ([]shared.Candle, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("limit должен быть позитивным, got %d", limit)
 	}
@@ -60,8 +38,8 @@ func LoadCandles(ctx context.Context, pool *pgxpool.Pool, exchange, contract str
 	}
 
 	// автоматически закрывает rows и эффективно аллоцирует память по мере чтения
-	candles, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Candle, error) {
-		var c Candle
+	candles, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (shared.Candle, error) {
+		var c shared.Candle
 		err := row.Scan(&c.OpenTime, &c.Open, &c.High, &c.Low, &c.Close)
 		return c, err
 	})
@@ -79,7 +57,7 @@ func LoadCandles(ctx context.Context, pool *pgxpool.Pool, exchange, contract str
 
 // Строит конус волатильности для заданных DTE (например, []int{1, 3, 7, 14, 30})
 // Также возвращает карту полных временных рядов RV по каждому DTE (пригодится далее для HAR-RV)
-func CalculateVolatilityCone(candles []Candle, dtes []int) ([]ConePoint, map[int][]float64, error) {
+func CalculateVolatilityCone(candles []shared.Candle, dtes []int) ([]shared.ConePoint, map[int][]float64, error) {
 	m := len(candles)
 	if m < 2 {
 		return nil, nil, fmt.Errorf("Ошибка недостаточно свечей: %d", m)
@@ -120,7 +98,7 @@ func CalculateVolatilityCone(candles []Candle, dtes []int) ([]ConePoint, map[int
 		prefRS[i] = prefRS[i-1] + rsi
 	}
 
-	cone := make([]ConePoint, 0, len(dtes))
+	cone := make([]shared.ConePoint, 0, len(dtes))
 	seriesMap := make(map[int][]float64, len(dtes))
 
 	for _, dte := range dtes {
@@ -170,7 +148,7 @@ func CalculateVolatilityCone(candles []Candle, dtes []int) ([]ConePoint, map[int
 		sorted := slices.Clone(rvSeries)
 		slices.Sort(sorted)
 
-		cone = append(cone, ConePoint{
+		cone = append(cone, shared.ConePoint{
 			DTE:     dte,
 			Min:     sorted[0],
 			P10:     percentile(sorted, 0.10),

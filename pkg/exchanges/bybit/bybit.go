@@ -480,7 +480,7 @@ func (b *BybitClient) GetKline(contract string, category string, interval string
 }
 
 // получает данные по опционам
-func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
+func (b *BybitClient) GetTickersDataSequental(exchange *shared.ExchangeData) {
 
 	// var spotTikers shared.SpotTickers
 	// var perpetualTikers shared.PerpetualTickers
@@ -1346,7 +1346,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.Exchange) {
 }
 
 // вспомогательный воркер для отправики сообщений ping
-func (b *BybitClient) WsPingTimer(ctx context.Context, exchange *shared.Exchange, stopChan chan struct{}, wsKey string) {
+func (b *BybitClient) WsPingTimer(ctx context.Context, exchange *shared.ExchangeData, stopChan chan struct{}, wsKey string) {
 
 	slog.Info("Ws ping запуск воркера", "exchangeName", exchange.ExchangeName, "wsKey", wsKey)
 
@@ -1387,7 +1387,7 @@ func (b *BybitClient) WsPingTimer(ctx context.Context, exchange *shared.Exchange
 }
 
 // обработка сообщение и передача данных в общее хранилище
-func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, conn *websocket.Conn, message []byte) {
+func (b *BybitClient) WsDecodeMessage(exchange *shared.ExchangeData, wsKey string, conn *websocket.Conn, message []byte) {
 	// //еcли ответ - пустое ообщение - это переподключение
 	// if string(message) == "" {
 	// 	slog.Debug("Ws переподключен", "ExchangeName", exchange.ExchangeName)
@@ -1623,7 +1623,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.Exchange, wsKey string, c
 }
 
 // подписывается на канал получения последней свечи
-func (b *BybitClient) WsSubscribeLastCandle(exchange *shared.Exchange, contract string, category string, interval string) {
+func (b *BybitClient) WsSubscribeLastCandle(exchange *shared.ExchangeData, contract string, category string, interval string) {
 
 	//конвертируем интервал во внутренний
 	intervalConverted, err := b.ConvertInterval(interval)

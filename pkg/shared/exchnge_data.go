@@ -9,7 +9,7 @@ import (
 )
 
 // биржа
-type Exchange struct {
+type ExchangeData struct {
 	IsActive       bool
 	ExchangeName   string
 	AllSymbols     map[string]*SymbolData
@@ -30,9 +30,9 @@ type SymbolData struct {
 	Symbol      string
 	FetchFilter []string
 
-	Info InfoMu
-
+	Info        InfoMu
 	TickersData TickersDataMu
+	RvConeData  RvConeDataMu
 }
 
 type InfoMu struct {
@@ -272,4 +272,37 @@ type FeeRates struct {
 	Spot    FeeRatesSpot    `json:"spot_fee_rates"`
 	Futures FeeRatesFutures `json:"futures_fee_rates"`
 	Options FeeRatesOptions `json:"options_fee_rates"`
+}
+
+type RvConeDataMu struct {
+	Contract   string
+	Category   string
+	Interval   string
+	Limit      int
+	ConePoints []ConePoint
+	SeriesMap  map[int][]float64
+	UpdateTime time.Time
+	sync.RWMutex
+}
+
+// метрики конуса для конкретного горизонта (DTE)
+type ConePoint struct {
+	DTE     int     `json:"dte"`
+	Min     float64 `json:"min"`
+	P10     float64 `json:"p10"`
+	P25     float64 `json:"p25"`
+	Median  float64 `json:"median"`
+	P75     float64 `json:"p75"`
+	P90     float64 `json:"p90"`
+	Max     float64 `json:"max"`
+	Current float64 `json:"current"`
+}
+
+// одна свечка OHLC для хранения в бд
+type Candle struct {
+	OpenTime time.Time
+	Open     float64
+	High     float64
+	Low      float64
+	Close    float64
 }

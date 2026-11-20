@@ -8,7 +8,7 @@ type UserData struct {
 }
 
 // создает и инициализирует нового пользователя
-func NewUserData(allExchanges map[string]*Exchange, id, name, role string) *UserData {
+func NewUserData(allExchanges map[string]*ExchangeData, id, name, role string) *UserData {
 
 	// Выделяем память сразу под количество бирж
 	rates := make(map[string]FeeRates, len(allExchanges))

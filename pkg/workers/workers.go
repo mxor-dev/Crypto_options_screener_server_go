@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"crypto_options_screener/pkg/shared"
+	"crypto_options_screener/pkg/volatility"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,7 +21,7 @@ import (
 //------- РАЗОВЫЕ ФУНКЦИИ
 
 // получает данные по всем монеткам для конкретной биржи и сохраняеет ее в БД
-func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
+func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.ExchangeData) {
 
 	//для каждого символа для текущей биржи
 	for symbolKey, symbolVal := range exchange.AllSymbols {
@@ -86,7 +87,7 @@ func GetAllSymbolsInfo(pool *pgxpool.Pool, exchange *shared.Exchange) {
 }
 
 // получает данные kline и сохраняет их в общем объекте
-func GetKlineData(exchange *shared.Exchange, symbol string, contract string, category string, interval string) {
+func GetKlineData(exchange *shared.ExchangeData, symbol string, contract string, category string, interval string) {
 
 	//получим данные
 	klines, err := exchange.Client.GetKline(contract, category, interval, "", "", exchange.KlineLimit)
@@ -165,16 +166,23 @@ func GetKlineData(exchange *shared.Exchange, symbol string, contract string, cat
 
 }
 
-// получает длинные данные kline и сохраняет их в бд
-func GetKlineDataHistory(pool *pgxpool.Pool, table_name string, exchange *shared.Exchange, contract string, category string, interval string, total_length int) {
+// GetKlineDataHistory получает длинные данные kline и сохраняет их в БД.
+func GetKlineDataHistory(ctx context.Context, pool *pgxpool.Pool, exchange *shared.ExchangeData, contract string, category string, interval string, totalLength int) error {
 	var allKlines [][]string
 	var currentEnd string
 
-	for len(allKlines) < total_length {
+	tableName := "kline_data_" + interval
+
+	for len(allKlines) < totalLength {
+
+		// Проверяем, не отменен ли контекст перед очередным сетевым запросом
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("Контекст отменен при получении kline (%s, %s): %w", exchange.ExchangeName, contract, err)
+		}
+
 		klines, err := exchange.Client.GetKline(contract, category, interval, "", currentEnd, exchange.KlineLimit)
 		if err != nil {
-			slog.Error("Ошибка при получении kline", "exchangeName", exchange.ExchangeName, "contract", contract, "category", category, "interval", interval, "err", err)
-			return
+			return fmt.Errorf("Ошибка при получении kline (%s, %s, %s, %s): %w", exchange.ExchangeName, contract, category, interval, err)
 		}
 
 		if len(klines) == 0 {
@@ -185,14 +193,12 @@ func GetKlineDataHistory(pool *pgxpool.Pool, table_name string, exchange *shared
 		// Самая старая свеча в пачке (последний индекс)
 		oldestCandle := klines[len(klines)-1]
 		if len(oldestCandle) == 0 {
-			slog.Error("Некорректный формат свечи от биржи", "contract", contract)
-			return
+			return fmt.Errorf("Некорректный формат свечи от биржи (%s, %s): пустой массив", exchange.ExchangeName, contract)
 		}
 
 		oldestTimestamp, err := strconv.ParseInt(oldestCandle[0], 10, 64)
 		if err != nil {
-			slog.Error("Ошибка парсинга timestamp свечи", "exchangeName", exchange.ExchangeName, "contract", contract, "timestamp", oldestCandle[0], "err", err)
-			return
+			return fmt.Errorf("Ошибка парсинга timestamp свечи (%s, %s, val=%q): %w", exchange.ExchangeName, contract, oldestCandle[0], err)
 		}
 
 		allKlines = append(allKlines, klines...)
@@ -200,12 +206,12 @@ func GetKlineDataHistory(pool *pgxpool.Pool, table_name string, exchange *shared
 		time.Sleep(exchange.FetchIntervals.HistoryKlinesDataGetInterval)
 	}
 
-	if len(allKlines) > total_length {
-		allKlines = allKlines[:total_length]
+	if len(allKlines) > totalLength {
+		allKlines = allKlines[:totalLength]
 	}
 
 	if len(allKlines) == 0 {
-		return
+		return nil
 	}
 
 	// Разворачиваем стандартным пакетом slices (от старых к новым)
@@ -220,43 +226,36 @@ func GetKlineDataHistory(pool *pgxpool.Pool, table_name string, exchange *shared
 		close    float64
 	}
 
-	// Конвертируем весь строковый массив в числовое представление
 	parsedKlines := make([]klineRecord, 0, len(allKlines))
 
 	for i, k := range allKlines {
 		if len(k) < 5 {
-			slog.Error("Некорректная длина массива свечи (ожидалось >= 5)", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "kline", k)
-			return
+			return fmt.Errorf("Некорректная длина массива свечи (%s, %s, index=%d): ожидалось >= 5, получено %d", exchange.ExchangeName, contract, i, len(k))
 		}
 
 		tsMs, err := strconv.ParseInt(k[0], 10, 64)
 		if err != nil {
-			slog.Error("Ошибка парсинга open_time", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "val", k[0], "err", err)
-			return
+			return fmt.Errorf("Ошибка парсинга open_time (%s, %s, index=%d, val=%q): %w", exchange.ExchangeName, contract, i, k[0], err)
 		}
 
 		openPrice, err := strconv.ParseFloat(k[1], 64)
 		if err != nil {
-			slog.Error("Ошибка парсинга open", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "val", k[1], "err", err)
-			return
+			return fmt.Errorf("Ошибка парсинга open (%s, %s, index=%d, val=%q): %w", exchange.ExchangeName, contract, i, k[1], err)
 		}
 
 		highPrice, err := strconv.ParseFloat(k[2], 64)
 		if err != nil {
-			slog.Error("Ошибка парсинга high", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "val", k[2], "err", err)
-			return
+			return fmt.Errorf("Ошибка парсинга high (%s, %s, index=%d, val=%q): %w", exchange.ExchangeName, contract, i, k[2], err)
 		}
 
 		lowPrice, err := strconv.ParseFloat(k[3], 64)
 		if err != nil {
-			slog.Error("Ошибка парсинга low", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "val", k[3], "err", err)
-			return
+			return fmt.Errorf("Ошибка парсинга low (%s, %s, index=%d, val=%q): %w", exchange.ExchangeName, contract, i, k[3], err)
 		}
 
 		closePrice, err := strconv.ParseFloat(k[4], 64)
 		if err != nil {
-			slog.Error("Ошибка парсинга close", "exchangeName", exchange.ExchangeName, "contract", contract, "index", i, "val", k[4], "err", err)
-			return
+			return fmt.Errorf("Ошибка парсинга close (%s, %s, index=%d, val=%q): %w", exchange.ExchangeName, contract, i, k[4], err)
 		}
 
 		parsedKlines = append(parsedKlines, klineRecord{
@@ -273,64 +272,51 @@ func GetKlineDataHistory(pool *pgxpool.Pool, table_name string, exchange *shared
 	if len(parsedKlines) >= 2 {
 		expectedDelta := parsedKlines[1].tsMs - parsedKlines[0].tsMs
 		if expectedDelta <= 0 {
-			slog.Error("Некорректный порядок или дубликат времени в первых свечах",
-				"exchangeName", exchange.ExchangeName,
-				"contract", contract,
-				"ts0", parsedKlines[0].tsMs,
-				"ts1", parsedKlines[1].tsMs,
-			)
-			return
+			return fmt.Errorf("Некорректный порядок или дубликат времени в первых свечах (%s, %s): ts0=%d, ts1=%d",
+				exchange.ExchangeName, contract, parsedKlines[0].tsMs, parsedKlines[1].tsMs)
 		}
 
 		for i := 1; i < len(parsedKlines); i++ {
 			actualDelta := parsedKlines[i].tsMs - parsedKlines[i-1].tsMs
 			if actualDelta != expectedDelta {
-				slog.Error("Обнаружен разрыв в данных свечей",
-					"exchangeName", exchange.ExchangeName,
-					"contract", contract,
-					"index", i,
-					"prevTime", parsedKlines[i-1].openTime,
-					"currTime", parsedKlines[i].openTime,
-					"expectedDeltaMs", expectedDelta,
-					"actualDeltaMs", actualDelta,
-				)
-				return
+				return fmt.Errorf("Обнаружен разрыв в данных свечей (%s, %s, index=%d): prev=%s, curr=%s, expectedDeltaMs=%d, actualDeltaMs=%d",
+					exchange.ExchangeName, contract, i, parsedKlines[i-1].openTime, parsedKlines[i].openTime, expectedDelta, actualDelta)
 			}
 		}
 	}
 
 	// Составляем батч из проверенного числового массива и отправляем в БД
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	dbCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	query := fmt.Sprintf(`
 		INSERT INTO %s (exchange, contract, open_time, open, high, low, close)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (exchange, contract, open_time) DO NOTHING
-	`, pgx.Identifier{table_name}.Sanitize())
+	`, pgx.Identifier{tableName}.Sanitize())
 
 	batch := &pgx.Batch{}
 	for _, rec := range parsedKlines {
 		batch.Queue(query, exchange.ExchangeName, contract, rec.openTime, rec.open, rec.high, rec.low, rec.close)
 	}
 
-	br := pool.SendBatch(ctx, batch)
+	br := pool.SendBatch(dbCtx, batch)
 	defer br.Close()
 
 	for i := 0; i < batch.Len(); i++ {
 		if _, err := br.Exec(); err != nil {
-			slog.Error("Ошибка при вставке свечи в БД", "exchangeName", exchange.ExchangeName, "contract", contract, "table", table_name, "err", err)
-			return
+			return fmt.Errorf("Ошибка при вставке свечи в БД (%s, %s, table=%s, index=%d): %w", exchange.ExchangeName, contract, tableName, i, err)
 		}
 	}
 
-	slog.Info("Успешно загружена и сохранена история свечей", "exchangeName", exchange.ExchangeName, "contract", contract, "table", table_name, "count", len(parsedKlines))
+	slog.Info("Успешно загружена и сохранена история свечей", "exchangeName", exchange.ExchangeName, "contract", contract, "table", tableName, "count", len(parsedKlines))
+	return nil
 }
 
 //------- работа с БД------
 
 // сохраняет данные тикеров для всех монет указанной биржи
-func SaveAllTickersDataToDb(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
+func SaveAllTickersDataToDb(ctx context.Context, pool *pgxpool.Pool, exchange *shared.ExchangeData) {
 
 	//переменная для сохранения
 	var tickerDataToSave shared.TickersDataToSave
@@ -415,7 +401,7 @@ func GetTickerDataFromDb(ctx context.Context, pool *pgxpool.Pool, exchangeName, 
 // ------- REST ВОРКЕРЫ ------
 
 // получает данные с определенным интервалом и записывает их в бд
-func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
+func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.ExchangeData) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
@@ -536,7 +522,7 @@ func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *sh
 }
 
 // воркер для сохранения данных в бд по таймеру
-func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.Exchange) {
+func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.ExchangeData) {
 
 	// slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
@@ -634,10 +620,156 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 	// }
 }
 
+// получает исторические данные по свечам с определенным интервалом и записывает их в бд
+func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.ExchangeData) {
+	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
+
+	// Выносим обход символов в локальную функцию, чтобы вызвать её и при старте, и по таймеру
+	processSymbols := func() {
+		nowUTC := time.Now().UTC()
+
+		for i := range exchange.AllSymbols {
+			if ctx.Err() != nil {
+				return
+			}
+
+			exchange.AllSymbols[i].RvConeData.RLock()
+			contract := exchange.AllSymbols[i].RvConeData.Contract
+			category := exchange.AllSymbols[i].RvConeData.Category
+			interval := exchange.AllSymbols[i].RvConeData.Interval
+			limit := exchange.AllSymbols[i].RvConeData.Limit
+			updateTime := exchange.AllSymbols[i].RvConeData.UpdateTime
+			hasData := len(exchange.AllSymbols[i].RvConeData.ConePoints) > 0
+			exchange.AllSymbols[i].RvConeData.RUnlock()
+
+			if contract == "" || category == "" || interval == "" {
+				continue
+			}
+
+			// Если конус уже посчитан СЕГОДНЯ по UTC — пропускаем символ до наступления 00:00 UTC
+			isUpdatedTodayUTC := updateTime.Year() == nowUTC.Year() && updateTime.YearDay() == nowUTC.YearDay()
+			if hasData && isUpdatedTodayUTC {
+				continue
+			}
+
+			// Получаем данные для построения конуса из БД
+			candles, err := volatility.LoadCandles(ctx, pool, exchange.ExchangeName, contract, limit)
+			if err != nil {
+				slog.Error("Ошибка при получении истории свечей", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
+				continue
+			}
+
+			// Если данных по свечам вообще нет (первый холодный старт)
+			if len(candles) == 0 {
+				if err := GetKlineDataHistory(ctx, pool, exchange, contract, category, interval, limit); err != nil {
+					slog.Error("Ошибка при загрузке истории свечей", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
+					continue
+				}
+
+				candles, err = volatility.LoadCandles(ctx, pool, exchange.ExchangeName, contract, limit)
+				if err != nil {
+					slog.Error("Ошибка при повторном получении истории свечей", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
+					continue
+				}
+
+				if len(candles) == 0 {
+					slog.Warn("Свечи по контракту отсутствуют после загрузки", "exchangeName", exchange.ExchangeName, "contract", contract)
+					continue
+				}
+			}
+
+			// Цикл проверки актуальности свечей (если отстают > 1 часа — догружаем 1000 штук и проверяем снова)
+			candlesValid := true
+			for attempt := 0; attempt < 2; attempt++ {
+				lastCandle := candles[len(candles)-1]
+
+				if time.Since(lastCandle.OpenTime) <= time.Hour {
+					break
+				}
+
+				if attempt == 1 {
+					slog.Error("Данные свечей остались устаревшими после обновления", "exchangeName", exchange.ExchangeName, "contract", contract, "lastCandleTime", lastCandle.OpenTime)
+					candlesValid = false
+					break
+				}
+
+				if err := GetKlineDataHistory(ctx, pool, exchange, contract, category, interval, 1000); err != nil {
+					slog.Error("Ошибка при догрузке свечей", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
+					candlesValid = false
+					break
+				}
+
+				candles, err = volatility.LoadCandles(ctx, pool, exchange.ExchangeName, contract, limit)
+				if err != nil {
+					slog.Error("Ошибка при повторном чтении свечей из БД", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
+					candlesValid = false
+					break
+				}
+
+				if len(candles) == 0 {
+					slog.Error("Получен пустой список свечей после догрузки", "exchangeName", exchange.ExchangeName, "contract", contract)
+					candlesValid = false
+					break
+				}
+			}
+
+			if !candlesValid {
+				continue
+			}
+
+			// Просчитаем конус RV
+			dtes := []int{1, 3, 7, 14, 30}
+			cone, seriesMap, err := volatility.CalculateVolatilityCone(candles, dtes)
+			if err != nil {
+				slog.Error("Ошибка при расчете RV cone", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
+				continue
+			}
+
+			// Запишем полученные данные и время обновления
+			exchange.AllSymbols[i].RvConeData.Lock()
+			exchange.AllSymbols[i].RvConeData.ConePoints = cone
+			exchange.AllSymbols[i].RvConeData.SeriesMap = seriesMap
+			exchange.AllSymbols[i].RvConeData.UpdateTime = time.Now().UTC()
+			exchange.AllSymbols[i].RvConeData.Unlock()
+
+			slog.Info("Данные RV cone успешно обновлены", "exchangeName", exchange.ExchangeName, "contract", contract)
+		}
+	}
+
+	// Запускаем проверку сразу при старте воркера (актуально после перезапуска сервера)
+	processSymbols()
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer func() {
+		ticker.Stop()
+		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
+	}()
+
+	var lastTriggeredHour time.Time
+
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now().UTC().Truncate(time.Second)
+			currentHour := now.Truncate(time.Hour)
+
+			// Запускаем проверку каждый час в :00:00
+			if now.Minute() == 0 && now.Second() == 0 && !currentHour.Equal(lastTriggeredHour) {
+				lastTriggeredHour = currentHour
+				processSymbols()
+			}
+
+		case <-ctx.Done():
+			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
+			return
+		}
+	}
+}
+
 //------- СИСТЕМНЫЕ ВОРКЕРЫ ------
 
 // просматривает данные kline на всех биржах и монетах и отключает те время которых истекло
-func ExpiredDataDeleteTimer(ctx context.Context, exchange *shared.Exchange, deltaTime time.Duration) {
+func ExpiredDataDeleteTimer(ctx context.Context, exchange *shared.ExchangeData, deltaTime time.Duration) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
@@ -767,7 +899,7 @@ func ExpiredDataDeleteTimer(ctx context.Context, exchange *shared.Exchange, delt
 }
 
 // воркер раз в * сек показывает размер объекта
-func GetMemStatsTimer(ctx context.Context, exchange *shared.Exchange, deltaTime time.Duration) {
+func GetMemStatsTimer(ctx context.Context, exchange *shared.ExchangeData, deltaTime time.Duration) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
@@ -797,7 +929,7 @@ func GetMemStatsTimer(ctx context.Context, exchange *shared.Exchange, deltaTime 
 }
 
 // воркер раз в * сек показывает состояние выбранных параметров биржи
-func GetExangeStateTimer(ctx context.Context, exchange *shared.Exchange, deltaTime time.Duration) {
+func GetExangeStateTimer(ctx context.Context, exchange *shared.ExchangeData, deltaTime time.Duration) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 

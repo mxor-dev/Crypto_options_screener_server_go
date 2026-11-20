@@ -106,12 +106,12 @@ func main() {
 	//------ ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
 
 	//настройки для всех бирж в виде хеш-таблицы
-	allExchanges := map[string]*shared.Exchange{
+	allExchanges := map[string]*shared.ExchangeData{
 		"Bybit": {
 			IsActive:     true,
 			ExchangeName: "Bybit",
 			AllSymbols: map[string]*shared.SymbolData{
-				"BTC":  {Symbol: "BTC", FetchFilter: []string{"spot", "linear", "option"}},
+				"BTC":  {Symbol: "BTC", FetchFilter: []string{"spot", "linear", "option"}, RvConeData: shared.RvConeDataMu{Contract: "BTCUSDT", Category: "perpetual", Interval: "15m", Limit: 35000}},
 				"DOGE": {Symbol: "DOGE", FetchFilter: []string{"spot", "linear", "option"}},
 				"ETH":  {Symbol: "ETH", FetchFilter: []string{"spot", "linear", "option"}},
 				// "HYPE": {Symbol: "HYPE", FetchFilter: []string{"linear", "option"}},
@@ -190,6 +190,7 @@ func main() {
 
 			// Инициализируем пустую структуру для тикеров
 			symbolData.TickersData = shared.TickersDataMu{}
+
 		}
 
 		// Инициализируем мапу клайнов (Мьютексы на старте лочить НЕ НУЖНО)
@@ -270,10 +271,13 @@ func main() {
 					slog.Info("Запуск ws worker для биржи будет реализовано позднее", "exchangeName", exKey)
 				}
 
-				//запускаем воркера для получения данных по опционам по таймеру
+				//запуск воркера для получения данных конуса волатильности
+				go workers.GetKlineHistoryDataSequentalTimer(ctx, pool, allExchanges[exKey])
+
+				//запускаем воркера для получения данных по опционам по таймеру - нужно ли это???????
 				// go workers.GetOptionsDataTimer(ctx, pool, exchangeVal)
 
-				//запуск воркера для сохранения данных
+				//запуск воркера для сохранения данных - нужно ли это???????
 				// go workers.SaveSymbolDataToDbTimer(ctx, pool, exchangeVal)
 
 				//запуск воркера для очистки klineData
@@ -284,6 +288,7 @@ func main() {
 
 				//запуск воркера для получения статистики сервера
 				go workers.GetMemStatsTimer(ctx, allExchanges[exKey], 60*time.Second)
+
 			}
 		}
 
@@ -861,6 +866,47 @@ func main() {
 
 		// slog.Warn("Отправлены tickers_data", "url", "/api/last_candle", "req", req, "tickers_data", tickersResponse)
 
+	})
+	//информация по RV cone
+	r.POST("/api/rv_cone_data", func(c *gin.Context) {
+		type RvConeRequest struct {
+			ExchangeName string `json:"exchange_name" binding:"required"`
+			Contract     string `json:"symbol" binding:"required"`
+		}
+
+		var req RvConeRequest
+
+		// парсим данные
+		if err := c.ShouldBindJSON(&req); err != nil {
+
+			slog.Error("Ошибка в запросе: неверный формат данных", "url", "/api/rv_cone_data", "req", req)
+
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: неверный формат данных"})
+			return
+		}
+
+		slog.Debug("Получен запрос POST", "url", "/api/rv_cone_data", "req", req)
+
+		//проверим есть ли такая биржа
+		// exchange, ok := allExchanges[req.ExchangeName]
+		// if !ok {
+		// 	slog.Error("Ошибка в запросе: такой биржи не существует", "url", "/api/kline_data", "req", req)
+
+		// 	// Если прислали невалидный JSON или типы данных не совпали, возвращаем ошибку 400
+		// 	c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка в запросе: такой биржи не существует"})
+		// 	return
+		// }
+
+		// candles, err := LoadCandles(ctx, pool, "Bybit", "BTCUSDT", 35000)
+		// if err != nil {
+		// 	return err
+		// }
+
+		// dtes := []int{1, 3, 7, 14, 30}
+		// cone, seriesMap, err := CalculateVolatilityCone(candles, dtes)
+		// if err != nil {
+		// 	return err
+		// }
 	})
 
 	server := &http.Server{
