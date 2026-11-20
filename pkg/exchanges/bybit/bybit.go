@@ -1328,7 +1328,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.ExchangeData) {
 			exchange.AllSymbols[symbol].TickersData.Lock()
 			exchange.AllSymbols[symbol].TickersData.IndexPrice = indexPriceStr
 			exchange.AllSymbols[symbol].TickersData.Options = localAllOptionsTickers
-			exchange.AllSymbols[symbol].TickersData.Ts = time.Now().UTC()
+			exchange.AllSymbols[symbol].TickersData.Ts = time.Now()
 			// OptionsLen := len(exchange.AllSymbols[symbol].TickersData.Options)
 			// slog.Error("Получены данные Option", "ExchangeName", b.ExchangeName, "symbol", symbol, "exchange.AllSymbols[symbol].Tikers", exchange.AllSymbols[symbol].TickersData.Options)
 			exchange.AllSymbols[symbol].TickersData.Unlock()
@@ -1541,7 +1541,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.ExchangeData, wsKey strin
 
 			klineDataMu.Lock()
 			// Изменяем последнюю свечку TOHLC
-			klineDataMu.KlineData.LastCandle = []string{
+			klineDataMu.LastCandle = []string{
 				strconv.FormatInt(klines[0].Start, 10),
 				klines[0].Open,
 				klines[0].High,
@@ -1549,7 +1549,7 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.ExchangeData, wsKey strin
 				klines[0].Close,
 			}
 			//отметим время измененея
-			klineDataMu.KlineData.Ts = time.Now().UTC()
+			klineDataMu.Ts = time.Now()
 			klineDataMu.Unlock()
 
 			// slog.Debug("Пришли данные", "resp.Data", resp.Data)

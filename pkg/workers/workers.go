@@ -126,7 +126,7 @@ func GetKlineData(exchange *shared.ExchangeData, symbol string, contract string,
 		exchange.AllKlineData.KlineDataMap[key] = &shared.KlineDataMu{}
 
 		//заполним внутренний объект начальными значениями
-		exchange.AllKlineData.KlineDataMap[key].KlineData = shared.KlineData{
+		exchange.AllKlineData.KlineDataMap[key] = &shared.KlineDataMu{
 			Symbol:   symbol,
 			Contract: contract,
 			Category: category,
@@ -144,26 +144,36 @@ func GetKlineData(exchange *shared.ExchangeData, symbol string, contract string,
 		// slog.Error("Текущее время", "time.Now()", time.Now())
 		// slog.Error("Время удаления kline", "DeleteTime", time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime))
 
-		//еще раз получим уже существующие данные
-		KlineData, _ = exchange.AllKlineData.KlineDataMap[key]
-
 		slog.Info("Создана запись exchange.KlineData.KlineDataMap[key]", "exchangeName", exchange.ExchangeName, "key", key)
 
+	}
+
+	//еще раз получим уже существующие данные
+	exchange.AllKlineData.RLock()
+	KlineData, ok = exchange.AllKlineData.KlineDataMap[key]
+	exchange.AllKlineData.RUnlock()
+
+	//если не удалось получить данные
+	if !ok {
+		slog.Warn("Не удалось создать запись exchange.KlineData.KlineDataMap[key]", "exchangeName", exchange.ExchangeName, "key", key)
+		return
 	}
 
 	//сохраним данные
 	KlineData.Lock()
 	//коопируем kline даже нулевой массив
-	KlineData.KlineData.Klines = klines
+	KlineData.Klines = klines
 
 	//если есть что копировать
 	if len(klines) > 0 {
 		//копируем последнюю свечу
-		KlineData.KlineData.LastCandle = klines[len(klines)-1]
+		KlineData.LastCandle = klines[len(klines)-1]
 	}
-
+	KlineData.Ts = time.Now() //запишем время получения
+	// KlineData.KlineData.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime) //обновляеться в другом месте - когда пользователь запрошивает данные klines и видно что они нужны
 	KlineData.Unlock()
 
+	slog.Info("Данные klines записаны в общий объект", "exchangeName", exchange.ExchangeName, "key", key, "len(klines)", len(klines))
 }
 
 // GetKlineDataHistory получает длинные данные kline и сохраняет их в БД.
@@ -260,7 +270,7 @@ func GetKlineDataHistory(ctx context.Context, pool *pgxpool.Pool, exchange *shar
 
 		parsedKlines = append(parsedKlines, klineRecord{
 			tsMs:     tsMs,
-			openTime: time.UnixMilli(tsMs).UTC(),
+			openTime: time.UnixMilli(tsMs),
 			open:     openPrice,
 			high:     highPrice,
 			low:      lowPrice,
@@ -321,8 +331,8 @@ func SaveAllTickersDataToDb(ctx context.Context, pool *pgxpool.Pool, exchange *s
 	//переменная для сохранения
 	var tickerDataToSave shared.TickersDataToSave
 
-	// Берем текущее время в UTC и отбрасываем лишние минуты, секунды и наносекунды до 15 минут
-	ts := time.Now().UTC().Truncate(15 * time.Minute).UnixMilli()
+	// Берем текущее время и отбрасываем лишние минуты, секунды и наносекунды до 15 минут
+	ts := time.Now().Truncate(15 * time.Minute).UnixMilli()
 
 	//для каждого символа для данной биржи
 	for i := range exchange.AllSymbols {
@@ -422,7 +432,7 @@ func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *sh
 			// fmt.Print("тик\n")
 
 			//получим текущее время
-			now := time.Now().UTC()
+			now := time.Now()
 
 			//отбросим все до секунды
 			now = now.Truncate(time.Second)
@@ -433,8 +443,30 @@ func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *sh
 			//получим минуты
 			minutes := now.Minute()
 
-			// на каждой n секунде
-			if seconds%int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) == 0 {
+			// на каждой 15 минуте и 10 секунде
+			if (minutes%2 == 0) && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
+
+				//потокобезопасно получим мап с данными kline
+				exchange.AllKlineData.Lock()
+				KlineDataMap := exchange.AllKlineData.KlineDataMap
+				exchange.AllKlineData.Unlock()
+
+				//для каждой записи kline
+				for j := range KlineDataMap {
+					//получим и сохраним в общий объект
+					GetKlineData(
+						exchange,
+						KlineDataMap[j].Symbol,
+						KlineDataMap[j].Contract,
+						KlineDataMap[j].Category,
+						KlineDataMap[j].Interval,
+					)
+					//сделаем паузу между запросами
+					time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+
+				}
+
+			} else if seconds%int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) == 0 { //на на любой 10 секунде любой минуты
 				//последовательно получим данные
 				exchange.Client.GetTickersDataSequental(exchange)
 
@@ -445,38 +477,7 @@ func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *sh
 					SaveAllTickersDataToDb(ctx, pool, exchange)
 				}
 			}
-			// на каждой 15 минуте и 10 секунде
-			if (minutes%15 == 0) && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
-
-				//для каждого символа для текущей биржи
-				for i := range exchange.AllSymbols {
-
-					//потокобезопасно получим мап с данными kline
-					exchange.AllKlineData.Lock()
-					KlineDataMap := exchange.AllKlineData.KlineDataMap
-					exchange.AllKlineData.Unlock()
-
-					//для каждой записи kline
-					for j := range KlineDataMap {
-
-						//фильтр по интервалу
-						if KlineDataMap[j].KlineData.Interval == "15m" {
-
-							//получим и сохраним в общий объект
-							GetKlineData(
-								exchange,
-								exchange.AllSymbols[i].Symbol,
-								KlineDataMap[j].KlineData.Contract,
-								KlineDataMap[j].KlineData.Category,
-								KlineDataMap[j].KlineData.Interval,
-							)
-							//сделаем паузу между запросами
-							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-						}
-					}
-				}
-			}
-			//на каждой часовой минуте и 10 секунде
+			//в начале каждого часа и 10 секунде
 			if minutes == 0 && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
 
 				//для каждого символа для текущей биржи
@@ -494,15 +495,15 @@ func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *sh
 						for j := range KlineDataMap {
 
 							//фильтр по интервалу
-							if KlineDataMap[j].KlineData.Interval == interval {
+							if KlineDataMap[j].Interval == interval {
 
 								//получим и сохраним в общий объект
 								GetKlineData(
 									exchange,
 									exchange.AllSymbols[i].Symbol,
-									KlineDataMap[j].KlineData.Contract,
-									KlineDataMap[j].KlineData.Category,
-									KlineDataMap[j].KlineData.Interval,
+									KlineDataMap[j].Contract,
+									KlineDataMap[j].Category,
+									KlineDataMap[j].Interval,
 								)
 								//сделаем паузу между запросами
 								time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
@@ -539,7 +540,7 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 	// 	case <-ticker.C:
 
 	// 		//получим текущее время
-	// 		now := time.Now().UTC()
+	// 		now := time.Now()
 
 	// 		//отбросим все до секунды
 	// 		now = now.Truncate(time.Second)
@@ -626,7 +627,7 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 
 	// Выносим обход символов в локальную функцию, чтобы вызвать её и при старте, и по таймеру
 	processSymbols := func() {
-		nowUTC := time.Now().UTC()
+		nowUTC := time.Now()
 
 		for i := range exchange.AllSymbols {
 			if ctx.Err() != nil {
@@ -729,7 +730,7 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 			exchange.AllSymbols[i].RvConeData.Lock()
 			exchange.AllSymbols[i].RvConeData.ConeLines = cone
 			exchange.AllSymbols[i].RvConeData.SeriesMap = seriesMap
-			exchange.AllSymbols[i].RvConeData.UpdateTime = time.Now().UTC()
+			exchange.AllSymbols[i].RvConeData.UpdateTime = time.Now()
 			exchange.AllSymbols[i].RvConeData.Unlock()
 
 			slog.Info("Данные RV cone успешно обновлены", "exchangeName", exchange.ExchangeName, "contract", contract)
@@ -750,7 +751,7 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now().UTC().Truncate(time.Second)
+			now := time.Now().Truncate(time.Second)
 			currentHour := now.Truncate(time.Hour)
 
 			// Запускаем проверку каждый час в :00:00
@@ -789,7 +790,7 @@ func ExpiredDataDeleteTimer(ctx context.Context, exchange *shared.ExchangeData, 
 			// fmt.Print("тик\n")
 
 			//получим текущее время
-			now := time.Now().UTC()
+			now := time.Now()
 
 			//ключи для удаления
 			var keysToDelete []string
@@ -802,7 +803,7 @@ func ExpiredDataDeleteTimer(ctx context.Context, exchange *shared.ExchangeData, 
 				// slog.Error("Текущее время", "key", k, "time.Now()", time.Now())
 				// slog.Error("Время уделаения", "key", k, "klineMu.KlineData.DeleteTime", klineMu.KlineData.DeleteTime)
 				//проверим что текущее время больше записанного
-				if now.After(klineMu.KlineData.DeleteTime) {
+				if now.After(klineMu.DeleteTime) {
 					// slog.Error("Время уделаения", "key", k, "klineMu.KlineData.DeleteTime", klineMu.KlineData.DeleteTime)
 
 					//запишем ключ
@@ -961,7 +962,7 @@ func GetExangeStateTimer(ctx context.Context, exchange *shared.ExchangeData, del
 				// KlineDataMapKeys = append(KlineDataMapKeys, key)
 
 				KlineDataMap[key].Lock()
-				klinesRequsted = append(klinesRequsted, KlinesRequsted{Key: key, DeleteTime: KlineDataMap[key].KlineData.DeleteTime})
+				klinesRequsted = append(klinesRequsted, KlinesRequsted{Key: key, DeleteTime: KlineDataMap[key].DeleteTime})
 				KlineDataMap[key].Unlock()
 			}
 			exchange.AllKlineData.Unlock()

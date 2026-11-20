@@ -457,16 +457,20 @@ func main() {
 
 			}
 
-			//получим данные
-			KlineData := KlineDataMu.GetKlineData()
-
+			KlineDataMu.Lock()
 			//заполним недостающие поля
-			response.Contract = KlineData.Contract
-			response.Category = KlineData.Category
-			response.Interval = KlineData.Interval
-			response.Klines = KlineData.Klines
-			response.LastCandle = KlineData.LastCandle
-			response.Ts = KlineData.Ts.UnixMilli()
+			response.Contract = KlineDataMu.Contract
+			response.Category = KlineDataMu.Category
+			response.Interval = KlineDataMu.Interval
+
+			response.Klines = KlineDataMu.Klines
+			response.LastCandle = KlineDataMu.LastCandle
+
+			response.Ts = KlineDataMu.Ts.UnixMilli()
+
+			//отодвинем время  удаления
+			KlineDataMu.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
+			KlineDataMu.Unlock()
 
 			//дадим ответ
 			c.JSON(http.StatusOK, gin.H{
@@ -477,17 +481,21 @@ func main() {
 		} else {
 			slog.Info("Данные по запросу kline найдены", "url", "/api/kline_data", "req", req)
 
-			//получим данные
-			KlineData := KlineDataMu.GetKlineData()
+			KlineDataMu.Lock()
 
 			//заполним недостающие поля
-			response.Contract = KlineData.Contract
-			response.Category = KlineData.Category
-			response.Interval = KlineData.Interval
-			response.Klines = KlineData.Klines
-			response.LastCandle = KlineData.LastCandle
+			response.Contract = KlineDataMu.Contract
+			response.Category = KlineDataMu.Category
+			response.Interval = KlineDataMu.Interval
+			response.Klines = KlineDataMu.Klines
+			response.LastCandle = KlineDataMu.LastCandle
 
-			response.Ts = KlineData.Ts.UnixMilli()
+			response.Ts = KlineDataMu.Ts.UnixMilli()
+
+			//отодвинем время  удаления
+			KlineDataMu.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
+
+			KlineDataMu.Unlock()
 
 			//дадим ответ
 			c.JSON(http.StatusOK, gin.H{
@@ -568,10 +576,10 @@ func main() {
 
 		KlineDataMu.Lock()
 		//получим данные последней свечки
-		lastCandle := KlineDataMu.KlineData.LastCandle
-		ts := KlineDataMu.KlineData.Ts
+		lastCandle := KlineDataMu.LastCandle
+		ts := KlineDataMu.Ts
 		//продлим время жизни данным
-		KlineDataMu.KlineData.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
+		KlineDataMu.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
 		KlineDataMu.Unlock()
 
 		//дадим ответ
