@@ -927,12 +927,12 @@ func main() {
 		}
 
 		type RvConeResponse struct {
-			Contract    string             `json:"contract"`
-			Category    string             `json:"category"`
-			Interval    string             `json:"interval"`
-			Limit       int                `json:"limit"`
-			ConeLines   shared.ConeLines   `json:"cone_lines"`
-			ForcastLine shared.ForcastLine `json:"forcast_line"`
+			Contract     string             `json:"contract"`
+			Category     string             `json:"category"`
+			Interval     string             `json:"interval"`
+			Limit        int                `json:"limit"`
+			ConeLines    shared.ConeLines   `json:"cone_lines"`
+			ForecastLine shared.ForcastLine `json:"forecast_line"`
 			// SeriesMap  map[int][]float64  `json:"series_map"`
 			UpdateTime int64 `json:"update_time"`
 		}
@@ -959,7 +959,7 @@ func main() {
 			Current: slices.Clone(src.Current),
 		}
 
-		forcastLine := symbolData.RvConeData.ForcastLine
+		forecastLine := symbolData.RvConeData.ForecastLine
 
 		// Глубокое копирование мапы SeriesMap (включая вложенные слайсы []float64)
 		// seriesMap := make(map[int][]float64, len(symbolData.RvConeData.SeriesMap))
@@ -972,12 +972,12 @@ func main() {
 
 		// Собираем итоговую структуру ответа
 		rvConeResponse := RvConeResponse{
-			Contract:    contract,
-			Category:    category,
-			Interval:    interval,
-			Limit:       limit,
-			ConeLines:   coneLines,
-			ForcastLine: forcastLine,
+			Contract:     contract,
+			Category:     category,
+			Interval:     interval,
+			Limit:        limit,
+			ConeLines:    coneLines,
+			ForecastLine: forecastLine,
 			// SeriesMap:  seriesMap,
 			UpdateTime: updateTime.UnixMilli(),
 		}

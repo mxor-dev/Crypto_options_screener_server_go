@@ -768,8 +768,8 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 			exchange.AllSymbols[i].RvConeData.Lock()
 			exchange.AllSymbols[i].RvConeData.ConeLines = cone
 
-			exchange.AllSymbols[i].RvConeData.ForcastLine.DTE = forecastDTE
-			exchange.AllSymbols[i].RvConeData.ForcastLine.Forcast = forecastValues
+			exchange.AllSymbols[i].RvConeData.ForecastLine.DTE = forecastDTE
+			exchange.AllSymbols[i].RvConeData.ForecastLine.Forecast = forecastValues
 
 			// exchange.AllSymbols[i].RvConeData.SeriesMap = seriesMap
 			exchange.AllSymbols[i].RvConeData.UpdateTime = time.Now()

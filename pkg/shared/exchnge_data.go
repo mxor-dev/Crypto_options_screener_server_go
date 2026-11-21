@@ -288,8 +288,8 @@ type RvConeDataMu struct {
 	Interval string
 	Limit    int
 	// ConePoints []ConePoint
-	ConeLines   ConeLines
-	ForcastLine ForcastLine
+	ConeLines    ConeLines
+	ForecastLine ForcastLine
 	// SeriesMap  map[int][]float64 //это тяжелые данные нужны ли они хранить их в структуре а птом писать в бд??? они нужны для расчета прогноза
 	UpdateTime time.Time
 	sync.RWMutex
@@ -321,8 +321,8 @@ type ConeLines struct {
 }
 
 type ForcastLine struct {
-	DTE     []int     `json:"dte"`
-	Forcast []float64 `json:"Forcast"`
+	DTE      []int     `json:"dte"`
+	Forecast []float64 `json:"forecast"`
 }
 
 // одна свечка OHLC для хранения в бд
