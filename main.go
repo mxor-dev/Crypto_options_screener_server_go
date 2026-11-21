@@ -469,7 +469,7 @@ func main() {
 			response.Ts = KlineDataMu.Ts.UnixMilli()
 
 			//отодвинем время  удаления
-			KlineDataMu.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
+			// KlineDataMu.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
 			KlineDataMu.Unlock()
 
 			//дадим ответ
@@ -493,7 +493,7 @@ func main() {
 			response.Ts = KlineDataMu.Ts.UnixMilli()
 
 			//отодвинем время  удаления
-			KlineDataMu.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
+			// KlineDataMu.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
 
 			KlineDataMu.Unlock()
 

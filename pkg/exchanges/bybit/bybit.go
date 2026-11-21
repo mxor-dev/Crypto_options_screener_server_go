@@ -1632,28 +1632,23 @@ func (b *BybitClient) WsSubscribeLastCandle(exchange *shared.ExchangeData, contr
 		return
 	}
 
-	//получим вебсокет
-	var ws *shared.WsData
-	var ok bool
+	//получим ключ вебсокета
+	var wsKey string
+
 	switch category {
 	case "spot":
-		//получим ws спота
-		ws, ok = exchange.Ws["spot"]
-		if !ok {
-			slog.Error("Не удалось найти ws spot")
-			return
-		}
-
+		wsKey = "spot"
 	case "perpetual", "futures":
-		//получим ws спота
-		ws, ok = exchange.Ws["linear"]
-		if !ok {
-			slog.Error("Не удалось найти ws linear")
-			return
-		}
-
+		wsKey = "linear"
 	default:
 		slog.Error("Ошибка в запросе: такой категории не существует")
+		return
+	}
+
+	//получим ws
+	ws, ok := exchange.Ws[wsKey]
+	if !ok {
+		slog.Error("Не удалось найти ws", "wsKey", wsKey)
 		return
 	}
 
@@ -1677,6 +1672,7 @@ func (b *BybitClient) WsSubscribeLastCandle(exchange *shared.ExchangeData, contr
 
 		// составим сообщение
 		cmdMsg := shared.CmdChanMsg{
+			WsKey:      wsKey,
 			ID:         exchange.GenID.Next(),
 			Action:     "subscribe",
 			Topic:      klineTopik,

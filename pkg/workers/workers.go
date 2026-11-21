@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"crypto_options_screener/pkg/shared"
@@ -415,6 +416,9 @@ func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *sh
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
+	// Общий мьютекс на REST-запросы
+	var restMu sync.Mutex
+
 	//создадим тикер который каждые 1 секунду будет срабатывать
 	ticker := time.NewTicker(1 * time.Second)
 	defer func() {
@@ -443,74 +447,93 @@ func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *sh
 			//получим минуты
 			minutes := now.Minute()
 
+			slog.Warn("", "exchange.FetchIntervals.TickersDataGetInterval.Seconds()", exchange.FetchIntervals.TickersDataGetInterval.Seconds())
 			// на каждой 15 минуте и 10 секунде
-			if (minutes%2 == 0) && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
+			if (minutes%15 == 0) && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
 
-				//потокобезопасно получим мап с данными kline
-				exchange.AllKlineData.Lock()
-				KlineDataMap := exchange.AllKlineData.KlineDataMap
-				exchange.AllKlineData.Unlock()
-
-				//для каждой записи kline
-				for j := range KlineDataMap {
-					//получим и сохраним в общий объект
-					GetKlineData(
-						exchange,
-						KlineDataMap[j].Symbol,
-						KlineDataMap[j].Contract,
-						KlineDataMap[j].Category,
-						KlineDataMap[j].Interval,
-					)
-					//сделаем паузу между запросами
-					time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-
-				}
-
-			} else if seconds%int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) == 0 { //на на любой 10 секунде любой минуты
-				//последовательно получим данные
-				exchange.Client.GetTickersDataSequental(exchange)
-
-				//на каждоой 15 минуте сохраним данные в БД
-				if minutes%15 == 0 {
-
-					//соохраним данные тикеров для всех монет в бд
+				go func() {
+					//заблокируем мьютекс
+					restMu.Lock()
+					defer restMu.Unlock()
+					//соохраним данные тикеров для всех монет в бд - здесь их нге получаем
 					SaveAllTickersDataToDb(ctx, pool, exchange)
-				}
-			}
-			//в начале каждого часа и 10 секунде
-			if minutes == 0 && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
-
-				//для каждого символа для текущей биржи
-				for i := range exchange.AllSymbols {
 
 					//потокобезопасно получим мап с данными kline
 					exchange.AllKlineData.Lock()
 					KlineDataMap := exchange.AllKlineData.KlineDataMap
 					exchange.AllKlineData.Unlock()
 
-					//для каждого интервала - нужно чтобы интервалы шли последовательно
-					for _, interval := range []string{"1h", "1D", "1W"} {
+					//для каждой записи kline
+					for j := range KlineDataMap {
 
-						//для каждой записи kline
-						for j := range KlineDataMap {
+						//фильтр по интервалу
+						if KlineDataMap[j].Interval == "15m" {
 
-							//фильтр по интервалу
-							if KlineDataMap[j].Interval == interval {
+							//получим и сохраним в общий объект
+							GetKlineData(
+								exchange,
+								KlineDataMap[j].Symbol,
+								KlineDataMap[j].Contract,
+								KlineDataMap[j].Category,
+								KlineDataMap[j].Interval,
+							)
+							//сделаем паузу между запросами
+							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+						}
+					}
 
-								//получим и сохраним в общий объект
-								GetKlineData(
-									exchange,
-									exchange.AllSymbols[i].Symbol,
-									KlineDataMap[j].Contract,
-									KlineDataMap[j].Category,
-									KlineDataMap[j].Interval,
-								)
-								//сделаем паузу между запросами
-								time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+					//если это начало часа и 10 секунда - запросим остальные интервалы
+					if minutes == 0 && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) { //в начале каждого часа и 10 секунде
+
+						//для каждого символа для текущей биржи
+						for i := range exchange.AllSymbols {
+
+							//потокобезопасно получим мап с данными kline
+							exchange.AllKlineData.Lock()
+							KlineDataMap := exchange.AllKlineData.KlineDataMap
+							exchange.AllKlineData.Unlock()
+
+							//для каждого интервала - нужно чтобы интервалы шли последовательно
+							for _, interval := range []string{"1h", "1D", "1W"} {
+
+								//для каждой записи kline
+								for j := range KlineDataMap {
+
+									//фильтр по интервалу
+									if KlineDataMap[j].Interval == interval {
+
+										//получим и сохраним в общий объект
+										GetKlineData(
+											exchange,
+											exchange.AllSymbols[i].Symbol,
+											KlineDataMap[j].Contract,
+											KlineDataMap[j].Category,
+											KlineDataMap[j].Interval,
+										)
+										//сделаем паузу между запросами
+										time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+									}
+								}
 							}
 						}
 					}
+
+				}()
+
+			} else if seconds%int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) == 0 { //на на любой 10 секунде любой минуты
+
+				//делаем только если мьютекс не заблокирован
+				if restMu.TryLock() {
+					go func() {
+						//разблокируем мьютек при выходе из горутины
+						defer restMu.Unlock()
+
+						//получим данные тикеров
+						exchange.Client.GetTickersDataSequental(exchange)
+
+					}()
 				}
+
 			}
 
 		//если работа программы остановлены
@@ -723,8 +746,15 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 			cone, seriesMap, err := volatility.CalculateVolatilityCone(candles, dtes)
 			if err != nil {
 				slog.Error("Ошибка при расчете RV cone", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
-				continue
+				return
 			}
+
+			//просчитаем прогноз
+			// forecasts, err := volatility.PredictHARRV(seriesMap, []int{1, 3, 7})
+			// if err != nil {
+			// 	slog.Error("Ошибка при прогнозировании RV cone", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
+			// 	return
+			// }
 
 			// Запишем полученные данные и время обновления
 			exchange.AllSymbols[i].RvConeData.Lock()

@@ -289,7 +289,7 @@ type RvConeDataMu struct {
 	Limit    int
 	// ConePoints []ConePoint
 	ConeLines  ConeLines
-	SeriesMap  map[int][]float64
+	SeriesMap  map[int][]float64 //это тяжелые данные нужны ли они хранить их в структуре а птом писать в бд??? они нужны для расчета прогноза
 	UpdateTime time.Time
 	sync.RWMutex
 }
