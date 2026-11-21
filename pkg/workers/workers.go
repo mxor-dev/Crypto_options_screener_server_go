@@ -447,7 +447,6 @@ func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *sh
 			//получим минуты
 			minutes := now.Minute()
 
-			slog.Warn("", "exchange.FetchIntervals.TickersDataGetInterval.Seconds()", exchange.FetchIntervals.TickersDataGetInterval.Seconds())
 			// на каждой 15 минуте и 10 секунде
 			if (minutes%15 == 0) && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
 
@@ -749,17 +748,30 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 				return
 			}
 
+			forcastDtes := []int{1, 3, 7}
 			//просчитаем прогноз
-			// forecasts, err := volatility.PredictHARRV(seriesMap, []int{1, 3, 7})
-			// if err != nil {
-			// 	slog.Error("Ошибка при прогнозировании RV cone", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
-			// 	return
-			// }
+			forecasts, err := volatility.PredictHARRV(seriesMap, forcastDtes)
+			if err != nil {
+				slog.Error("Ошибка при прогнозировании RV cone", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
+				return
+			}
+
+			// Собираем слайсы DTE и значений прогноза из результата
+			forecastDTE := make([]int, len(forecasts))
+			forecastValues := make([]float64, len(forecasts))
+			for i, f := range forecasts {
+				forecastDTE[i] = f.HorizonDays
+				forecastValues[i] = f.ForecastRV
+			}
 
 			// Запишем полученные данные и время обновления
 			exchange.AllSymbols[i].RvConeData.Lock()
 			exchange.AllSymbols[i].RvConeData.ConeLines = cone
-			exchange.AllSymbols[i].RvConeData.SeriesMap = seriesMap
+
+			exchange.AllSymbols[i].RvConeData.ForcastLine.DTE = forecastDTE
+			exchange.AllSymbols[i].RvConeData.ForcastLine.Forcast = forecastValues
+
+			// exchange.AllSymbols[i].RvConeData.SeriesMap = seriesMap
 			exchange.AllSymbols[i].RvConeData.UpdateTime = time.Now()
 			exchange.AllSymbols[i].RvConeData.Unlock()
 
