@@ -748,7 +748,8 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 				return
 			}
 
-			forcastDtes := []int{1, 3, 7}
+			forcastDtes := []int{1, 3, 7, 14, 30}
+			// forcastDtes := []int{1, 3, 7, 14}
 			//просчитаем прогноз
 			forecasts, err := volatility.PredictHARRV(seriesMap, forcastDtes)
 			if err != nil {
