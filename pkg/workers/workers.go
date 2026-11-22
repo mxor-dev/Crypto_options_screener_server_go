@@ -643,13 +643,17 @@ func SaveSymbolDataToDbTimer(ctx context.Context, pool *pgxpool.Pool, exchange *
 	// }
 }
 
-// получает исторические данные по свечам с определенным интервалом и записывает их в бд
-func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.ExchangeData) {
+// Получение и расчет данных RV cone и сохранение их в общий объект
+func GetRvConeDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.ExchangeData) {
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
-	// Выносим обход символов в локальную функцию, чтобы вызвать её и при старте, и по таймеру
+	const (
+		candleInterval   = 15 * time.Minute
+		candleCloseDelay = 10 * time.Second
+	)
+
 	processSymbols := func() {
-		nowUTC := time.Now()
+		nowUTC := time.Now().UTC()
 
 		for i := range exchange.AllSymbols {
 			if ctx.Err() != nil {
@@ -669,9 +673,9 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 				continue
 			}
 
-			// Если конус уже посчитан СЕГОДНЯ по UTC — пропускаем символ до наступления 00:00 UTC
-			isUpdatedTodayUTC := updateTime.Year() == nowUTC.Year() && updateTime.YearDay() == nowUTC.YearDay()
-			if hasData && isUpdatedTodayUTC {
+			// Если конус уже посчитан в текущем 15-минутном окне — пропускаем
+			isUpdatedInCurrentSlot := updateTime.UTC().Truncate(candleInterval).Equal(nowUTC.Truncate(candleInterval))
+			if hasData && isUpdatedInCurrentSlot {
 				continue
 			}
 
@@ -701,12 +705,14 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 				}
 			}
 
-			// Цикл проверки актуальности свечей (если отстают > 1 часа — догружаем 1000 штук и проверяем снова)
+			// Проверка актуальности свечей для таймфрейма 15m с учетом 10с буфера на обновление
 			candlesValid := true
 			for attempt := 0; attempt < 2; attempt++ {
 				lastCandle := candles[len(candles)-1]
+				lag := time.Since(lastCandle.OpenTime)
 
-				if time.Since(lastCandle.OpenTime) <= time.Hour {
+				// Если последняя свеча открыта не более 15 минут + 10 секунд назад — данные актуальны
+				if lag <= candleInterval+candleCloseDelay {
 					break
 				}
 
@@ -716,7 +722,15 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 					break
 				}
 
-				if err := GetKlineDataHistory(ctx, pool, exchange, contract, category, interval, 1000); err != nil {
+				// Вычисляем, сколько 15-минутных свечей пропущено + 5 свечей запаса на перекрытие
+				missingCandles := int(lag/candleInterval) + 5
+				if missingCandles > limit {
+					missingCandles = limit // Если отставание слишком большое — перезагружаем весь лимит целиком
+				}
+
+				slog.Info("Догрузка пропущенных свечей", "exchangeName", exchange.ExchangeName, "contract", contract, "lag", lag, "fetchCount", missingCandles)
+
+				if err := GetKlineDataHistory(ctx, pool, exchange, contract, category, interval, missingCandles); err != nil {
 					slog.Error("Ошибка при догрузке свечей", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
 					candlesValid = false
 					break
@@ -745,64 +759,47 @@ func GetKlineHistoryDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, 
 			cone, seriesMap, err := volatility.CalculateVolatilityCone(candles, dtes)
 			if err != nil {
 				slog.Error("Ошибка при расчете RV cone", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
-				return
+				continue
 			}
 
 			forcastDtes := []int{1, 3, 7, 14, 30}
-			// forcastDtes := []int{1, 3, 7, 14}
-			//просчитаем прогноз
 			forecasts, err := volatility.PredictHARRV(seriesMap, forcastDtes)
 			if err != nil {
 				slog.Error("Ошибка при прогнозировании RV cone", "exchangeName", exchange.ExchangeName, "contract", contract, "err", err)
-				return
+				continue
 			}
 
-			// Собираем слайсы DTE и значений прогноза из результата
 			forecastDTE := make([]int, len(forecasts))
 			forecastValues := make([]float64, len(forecasts))
-			for i, f := range forecasts {
-				forecastDTE[i] = f.HorizonDays
-				forecastValues[i] = f.ForecastRV
+			for j, f := range forecasts {
+				forecastDTE[j] = f.HorizonDays
+				forecastValues[j] = f.ForecastRV
 			}
 
-			// Запишем полученные данные и время обновления
+			// Записываем рассчитанные данные в общий объект в памяти
 			exchange.AllSymbols[i].RvConeData.Lock()
 			exchange.AllSymbols[i].RvConeData.ConeLines = cone
-
 			exchange.AllSymbols[i].RvConeData.ForecastLine.DTE = forecastDTE
 			exchange.AllSymbols[i].RvConeData.ForecastLine.Forecast = forecastValues
-
-			// exchange.AllSymbols[i].RvConeData.SeriesMap = seriesMap
-			exchange.AllSymbols[i].RvConeData.UpdateTime = time.Now()
+			exchange.AllSymbols[i].RvConeData.UpdateTime = time.Now().UTC()
 			exchange.AllSymbols[i].RvConeData.Unlock()
 
 			slog.Info("Данные RV cone успешно обновлены", "exchangeName", exchange.ExchangeName, "contract", contract)
 		}
 	}
 
-	// Запускаем проверку сразу при старте воркера (актуально после перезапуска сервера)
+	// Запускаем проверку сразу при старте воркера
 	processSymbols()
 
-	ticker := time.NewTicker(1 * time.Second)
-	defer func() {
-		ticker.Stop()
-		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
-	}()
-
-	var lastTriggeredHour time.Time
-
 	for {
+		now := time.Now().UTC()
+		// Вычисляем начало следующей 15-минутки (00, 15, 30, 45) + 10 секунд задержки на обновление свечи
+		nextRun := now.Truncate(candleInterval).Add(candleInterval).Add(candleCloseDelay)
+		sleepDuration := time.Until(nextRun)
+
 		select {
-		case <-ticker.C:
-			now := time.Now().Truncate(time.Second)
-			currentHour := now.Truncate(time.Hour)
-
-			// Запускаем проверку каждый час в :00:00
-			if now.Minute() == 0 && now.Second() == 0 && !currentHour.Equal(lastTriggeredHour) {
-				lastTriggeredHour = currentHour
-				processSymbols()
-			}
-
+		case <-time.After(sleepDuration):
+			processSymbols()
 		case <-ctx.Done():
 			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
 			return

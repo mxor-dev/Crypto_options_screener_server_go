@@ -273,7 +273,7 @@ func main() {
 				}
 
 				//запуск воркера для получения данных конуса волатильности
-				go workers.GetKlineHistoryDataSequentalTimer(ctx, pool, allExchanges[exKey])
+				go workers.GetRvConeDataSequentalTimer(ctx, pool, allExchanges[exKey])
 
 				//запускаем воркера для получения данных по опционам по таймеру - нужно ли это???????
 				// go workers.GetOptionsDataTimer(ctx, pool, exchangeVal)
