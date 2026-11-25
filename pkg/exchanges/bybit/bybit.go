@@ -487,6 +487,8 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.ExchangeData) {
 	// var futuresTickers shared.FuturesTickers
 	// var OptionsTickers shared.OptionsTickers
 
+	var indexPrice string
+
 	startTime := time.Now()
 
 	//*********** Spot **************
@@ -643,9 +645,9 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.ExchangeData) {
 
 						// slog.Error("ЦЕНА ИНДЕКСА", "symbol", symbol, "list[i].IndexPrice", list[i].IndexPrice)
 						//если цена индекса не определена
-						// if indexPrice == "" {
-						// 	indexPrice = list[i].IndexPrice
-						// }
+						if indexPrice == "" {
+							indexPrice = list[i].MarkPrice
+						}
 
 						//сохраним данные
 						exchange.AllSymbols[symbol].TickersData.Lock()
@@ -796,13 +798,13 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.ExchangeData) {
 			}
 
 			//цена индекса строка - потом отдадим в TickersData
-			indexPriceStr := list[0].IndexPrice
+			// indexPriceStr := list[0].IndexPrice
 
-			//получим цену индекса для расчетов числом из данных первого опциона
-			indexPrice, err := strconv.ParseFloat(indexPriceStr, 64)
-			if err != nil {
-				indexPrice = 0
-			}
+			// //получим цену индекса для расчетов числом из данных первого опциона
+			// indexPrice, err := strconv.ParseFloat(indexPriceStr, 64)
+			// if err != nil {
+			// 	indexPrice = 0
+			// }
 
 			// slog.Warn("Получены данные по опционам", "ExchangeName", b.ExchangeName, "symbol", symbol, "rawOptionsData", rawOptionsData)
 
@@ -1326,7 +1328,8 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.ExchangeData) {
 
 			//запишем полученные данные
 			exchange.AllSymbols[symbol].TickersData.Lock()
-			exchange.AllSymbols[symbol].TickersData.IndexPrice = indexPriceStr
+			// exchange.AllSymbols[symbol].TickersData.IndexPrice = indexPriceStr
+			exchange.AllSymbols[symbol].TickersData.IndexPrice = indexPrice // цена индекса это цена markPrice из perpetual
 			exchange.AllSymbols[symbol].TickersData.Options = localAllOptionsTickers
 			exchange.AllSymbols[symbol].TickersData.Ts = time.Now()
 			// OptionsLen := len(exchange.AllSymbols[symbol].TickersData.Options)
