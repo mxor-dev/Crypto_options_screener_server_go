@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"runtime"
 	"slices"
 	"strconv"
@@ -133,8 +134,8 @@ func GetKlineData(exchange *shared.ExchangeData, symbol string, contract string,
 			Category: category,
 			Interval: interval,
 
-			Klines:     [][]string{},
-			LastCandle: []string{},
+			Klines: [][]string{},
+			// LastCandle: []string{},
 
 			Ts: time.Now(), //запишем время получения
 
@@ -166,10 +167,10 @@ func GetKlineData(exchange *shared.ExchangeData, symbol string, contract string,
 	KlineData.Klines = klines
 
 	//если есть что копировать
-	if len(klines) > 0 {
-		//копируем последнюю свечу
-		KlineData.LastCandle = klines[len(klines)-1]
-	}
+	// if len(klines) > 0 {
+	// 	//копируем последнюю свечу
+	// 	KlineData.LastCandle = klines[len(klines)-1]
+	// }
 	KlineData.Ts = time.Now() //запишем время получения
 	// KlineData.KlineData.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime) //обновляеться в другом месте - когда пользователь запрошивает данные klines и видно что они нужны
 	KlineData.Unlock()
@@ -409,10 +410,81 @@ func GetTickerDataFromDb(ctx context.Context, pool *pgxpool.Pool, exchangeName, 
 	return &output, nil
 }
 
-// ------- REST ВОРКЕРЫ ------
+// ------- REST ВОРКЕРЫ ТАЙМЕРЫ------
 
 // получает данные с определенным интервалом и записывает их в бд
-func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.ExchangeData) {
+func GetKlineDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.ExchangeData) {
+
+	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
+
+	//создадим тикер который каждые 1 секунду будет срабатывать
+	ticker := time.NewTicker(1 * time.Second)
+	defer func() {
+		ticker.Stop()
+		slog.Info("Таймер остановлен", "exchangeName", exchange.ExchangeName)
+	}()
+
+	//переменная для остановке
+
+	for {
+		select {
+		//если тикер дал тик
+		case <-ticker.C:
+
+			//потокобезопасно получим ссылку на мап с данными kline
+			exchange.AllKlineData.RLock()
+			KlineDataMap := slices.Collect(maps.Values(exchange.AllKlineData.KlineDataMap))
+			exchange.AllKlineData.RUnlock()
+
+			//для каждой записи kline
+			for j := range KlineDataMap {
+
+				//получим флаг о необходимости обновить данные
+				KlineDataMap[j].Lock()
+				isKlinesNeedsUpdate := KlineDataMap[j].IsKlinesNeedsUpdate
+				KlineDataMap[j].Unlock()
+
+				//если стоит флаг обновления данных kline
+				if isKlinesNeedsUpdate == true {
+
+					//получим данные для запроса
+					KlineDataMap[j].Lock()
+					symbol := KlineDataMap[j].Symbol
+					contract := KlineDataMap[j].Contract
+					category := KlineDataMap[j].Category
+					interval := KlineDataMap[j].Interval
+					KlineDataMap[j].Unlock()
+
+					//получим и сохраним в общий объект
+					GetKlineData(
+						exchange,
+						symbol,
+						contract,
+						category,
+						interval,
+					)
+
+					//снимем флаг о необходимости обновить данные
+					KlineDataMap[j].Lock()
+					KlineDataMap[j].IsKlinesNeedsUpdate = false
+					KlineDataMap[j].Unlock()
+
+					//сделаем паузу между запросами
+					time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+				}
+			}
+
+		//если работа программы остановлены
+		case <-ctx.Done():
+			// Завершаем работу функции по контексту - все defer отрабатают автоматически
+			slog.Info("Воркер остановлен", "exchangeName", exchange.ExchangeName)
+			return
+		}
+	}
+}
+
+// получает данные с определенным интервалом и записывает их в бд
+func GetTickersDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *shared.ExchangeData) {
 
 	slog.Info("Запуск воркера", "exchangeName", exchange.ExchangeName)
 
@@ -445,81 +517,83 @@ func GetDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, exchange *sh
 			seconds := now.Second()
 
 			//получим минуты
-			minutes := now.Minute()
+			// minutes := now.Minute()
 
 			// на каждой 15 минуте и 10 секунде
-			if (minutes%15 == 0) && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
+			// if (minutes%15 == 0) && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
 
-				go func() {
-					//заблокируем мьютекс
-					restMu.Lock()
-					defer restMu.Unlock()
-					//соохраним данные тикеров для всех монет в бд - здесь их нге получаем
-					SaveAllTickersDataToDb(ctx, pool, exchange)
+			// 	go func() {
+			// 		//заблокируем мьютекс
+			// 		restMu.Lock()
+			// 		defer restMu.Unlock()
+			// 		//соохраним данные тикеров для всех монет в бд - здесь их нге получаем
+			// 		SaveAllTickersDataToDb(ctx, pool, exchange)
 
-					//потокобезопасно получим мап с данными kline
-					exchange.AllKlineData.Lock()
-					KlineDataMap := exchange.AllKlineData.KlineDataMap
-					exchange.AllKlineData.Unlock()
+			// 		//потокобезопасно получим мап с данными kline
+			// 		exchange.AllKlineData.Lock()
+			// 		KlineDataMap := exchange.AllKlineData.KlineDataMap
+			// 		exchange.AllKlineData.Unlock()
 
-					//для каждой записи kline
-					for j := range KlineDataMap {
+			// 		//для каждой записи kline
+			// 		for j := range KlineDataMap {
 
-						//фильтр по интервалу
-						if KlineDataMap[j].Interval == "15m" {
+			// 			//фильтр по интервалу
+			// 			if KlineDataMap[j].Interval == "15m" {
 
-							//получим и сохраним в общий объект
-							GetKlineData(
-								exchange,
-								KlineDataMap[j].Symbol,
-								KlineDataMap[j].Contract,
-								KlineDataMap[j].Category,
-								KlineDataMap[j].Interval,
-							)
-							//сделаем паузу между запросами
-							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-						}
-					}
+			// 				//получим и сохраним в общий объект
+			// 				GetKlineData(
+			// 					exchange,
+			// 					KlineDataMap[j].Symbol,
+			// 					KlineDataMap[j].Contract,
+			// 					KlineDataMap[j].Category,
+			// 					KlineDataMap[j].Interval,
+			// 				)
+			// 				//сделаем паузу между запросами
+			// 				time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+			// 			}
+			// 		}
 
-					//если это начало часа и 10 секунда - запросим остальные интервалы
-					if minutes == 0 && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) { //в начале каждого часа и 10 секунде
+			// 		//если это начало часа и 10 секунда - запросим остальные интервалы
+			// 		if minutes == 0 && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) { //в начале каждого часа и 10 секунде
 
-						//для каждого символа для текущей биржи
-						for i := range exchange.AllSymbols {
+			// 			//для каждого символа для текущей биржи
+			// 			for i := range exchange.AllSymbols {
 
-							//потокобезопасно получим мап с данными kline
-							exchange.AllKlineData.Lock()
-							KlineDataMap := exchange.AllKlineData.KlineDataMap
-							exchange.AllKlineData.Unlock()
+			// 				//потокобезопасно получим мап с данными kline
+			// 				exchange.AllKlineData.Lock()
+			// 				KlineDataMap := exchange.AllKlineData.KlineDataMap
+			// 				exchange.AllKlineData.Unlock()
 
-							//для каждого интервала - нужно чтобы интервалы шли последовательно
-							for _, interval := range []string{"1h", "1D", "1W"} {
+			// 				//для каждого интервала - нужно чтобы интервалы шли последовательно
+			// 				for _, interval := range []string{"1h", "1D", "1W"} {
 
-								//для каждой записи kline
-								for j := range KlineDataMap {
+			// 					//для каждой записи kline
+			// 					for j := range KlineDataMap {
 
-									//фильтр по интервалу
-									if KlineDataMap[j].Interval == interval {
+			// 						//фильтр по интервалу
+			// 						if KlineDataMap[j].Interval == interval {
 
-										//получим и сохраним в общий объект
-										GetKlineData(
-											exchange,
-											exchange.AllSymbols[i].Symbol,
-											KlineDataMap[j].Contract,
-											KlineDataMap[j].Category,
-											KlineDataMap[j].Interval,
-										)
-										//сделаем паузу между запросами
-										time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-									}
-								}
-							}
-						}
-					}
+			// 							//получим и сохраним в общий объект
+			// 							GetKlineData(
+			// 								exchange,
+			// 								exchange.AllSymbols[i].Symbol,
+			// 								KlineDataMap[j].Contract,
+			// 								KlineDataMap[j].Category,
+			// 								KlineDataMap[j].Interval,
+			// 							)
+			// 							//сделаем паузу между запросами
+			// 							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
+			// 						}
+			// 					}
+			// 				}
+			// 			}
+			// 		}
 
-				}()
+			// 	}()
 
-			} else if seconds%int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) == 0 { //на на любой 10 секунде любой минуты
+			// } else
+			//на каждой 10 секунде
+			if seconds%int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) == 0 {
 
 				//делаем только если мьютекс не заблокирован
 				if restMu.TryLock() {

@@ -75,7 +75,6 @@ type WsBybitTradeItem struct {
 type WsBybitTradeItemShort struct {
 	Price string `json:"p"` // Цена сделки (прилетает строкой, например "77719.3")
 }
-
 type WsBybitKlineItem struct {
 	Start int64  `json:"start"` // Timestamp начала свечи (мс) -> T
 	Open  string `json:"open"`  // Цена открытия -> O
@@ -104,7 +103,7 @@ func New(apiKey string, apiSecret string) *BybitClient {
 
 //------- ОБЯЗАТЕЛЬНЫЕ ФУНКЦИИ ИНТЕРФЕЙСА ------
 
-// получает ися биржи из клиента
+// получает имя биржи из клиента
 func (b *BybitClient) GetExchangeName() string {
 	return b.ExchangeName
 }
@@ -641,7 +640,7 @@ func (b *BybitClient) GetTickersDataSequental(exchange *shared.ExchangeData) {
 					if list[i].Symbol == symbol+"USDT" {
 						// slog.Warn("Perpetual найден")
 
-						slog.Error("ЦЕНА ИНДЕКСА", "symbol", symbol, "list[i].IndexPrice", list[i].IndexPrice)
+						// slog.Error("ЦЕНА ИНДЕКСА", "symbol", symbol, "list[i].IndexPrice", list[i].IndexPrice)
 
 						//если цена индекса не определена
 						if indexPriceStr == "" {
@@ -1520,13 +1519,12 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.ExchangeData, wsKey strin
 			//Блокируем общее хранилище на чтение
 			exchange.AllKlineData.RLock()
 
-			// разблокировать ПРИ ЛЮБОМ ВЫХОДЕ из функции
-			defer exchange.AllKlineData.RUnlock()
-
-			//ищем карту
+			//ищем данные kline
 			klineDataMu, ok := exchange.AllKlineData.KlineDataMap[key]
 			if !ok {
-				//если данных kline нет (они были удалены по истечению времени) то и вебсокет не нужен
+				//Снимем блокировку
+				exchange.AllKlineData.RUnlock()
+
 				slog.Error("Ошибка поиска записи kline", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key)
 
 				//возьмем вебсокет
@@ -1546,18 +1544,91 @@ func (b *BybitClient) WsDecodeMessage(exchange *shared.ExchangeData, wsKey strin
 				return // Теперь тут RUnlock() вызовется автоматически благодаря defer! Никакого дедлока!
 			}
 
+			exchange.AllKlineData.RUnlock()
+
 			klineDataMu.Lock()
-			// Изменяем последнюю свечку TOHLC
-			klineDataMu.LastCandle = []string{
-				strconv.FormatInt(klines[0].Start, 10),
-				klines[0].Open,
-				klines[0].High,
-				klines[0].Low,
-				klines[0].Close,
+			defer klineDataMu.Unlock()
+
+			//проверим у kline есть хотябы два значения
+			if len(klineDataMu.Klines) < 2 {
+				slog.Error("Ошибка при обновлении последней свечки: длина данных kline < 2", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key)
+
+				return
 			}
+
+			//получим время текущей последней свечки
+			currLastCandleTime, err := strconv.ParseInt(klineDataMu.Klines[len(klineDataMu.Klines)-1][0], 10, 64)
+			if err != nil {
+				slog.Error("Ошибка при переводе во float64 времени последней свечи", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key)
+
+				return
+			}
+
+			//новое время последней свечки
+			newLastCandleTime := klines[0].Start
+
+			//если время текущей последней свечи и новой свечки равняются
+			if currLastCandleTime == newLastCandleTime {
+				//обновим последнюю свечку TOHLC
+				klineDataMu.Klines[len(klineDataMu.Klines)-1] = []string{
+					strconv.FormatInt(klines[0].Start, 10),
+					klines[0].Open,
+					klines[0].High,
+					klines[0].Low,
+					klines[0].Close,
+				}
+			}
+			//если в время текущей свечи меньше новой
+			if currLastCandleTime < newLastCandleTime {
+
+				//получим время пред последней свечки
+				currPreLastCandleTime, err := strconv.ParseInt(klineDataMu.Klines[len(klineDataMu.Klines)-2][0], 10, 64)
+				if err != nil {
+					slog.Error("Ошибка при переводе во float64 времени пред последней свечи", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key)
+
+					return
+				}
+
+				//найдем время между текущими свечками
+				currKlinesTimeDelta := currLastCandleTime - currPreLastCandleTime
+
+				//найдем время между новой свечкой и последней текущей
+				newTimeDelta := newLastCandleTime - currLastCandleTime
+
+				//если разница по времени не совпадает - есть пропуск свечей
+				if currKlinesTimeDelta != newTimeDelta {
+					slog.Warn("Данные kline устарели", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key)
+
+					//выставим флаг о необходимости обновить данные kline
+					klineDataMu.IsKlinesNeedsUpdate = true
+					return
+				}
+				//если разница по времени соврадает то это новая свечка
+				if currKlinesTimeDelta == newTimeDelta {
+
+					//добавим новую свечку
+					klineDataMu.Klines = append(klineDataMu.Klines, []string{
+						strconv.FormatInt(klines[0].Start, 10),
+						klines[0].Open,
+						klines[0].High,
+						klines[0].Low,
+						klines[0].Close,
+					})
+
+					//удалим первую свечку
+					klineDataMu.Klines = slices.Delete(klineDataMu.Klines, 0, 1)
+				}
+			}
+			//если в время текущей свечи меньше новой
+			if currLastCandleTime > newLastCandleTime {
+
+				slog.Error("Ошибка при обновлении последней свечи: время текущей свечи больше времени новой свечи", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key)
+
+				return
+			}
+
 			//отметим время измененея
 			klineDataMu.Ts = time.Now()
-			klineDataMu.Unlock()
 
 			// slog.Debug("Пришли данные", "resp.Data", resp.Data)
 			// slog.Debug("Ws пришла last_candle", "exchangeName", exchange.ExchangeName, "wsKey", wsKey, "topic", resp.Topic, "key", key, "klines[0]", klines[0])

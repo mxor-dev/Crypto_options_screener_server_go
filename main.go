@@ -250,8 +250,11 @@ func main() {
 				//получим информацию для всех монет на бирже
 				workers.GetAllSymbolsInfo(pool, allExchanges[exKey])
 
-				//запускаем горутину воркера для получения обновления данных kline по таймеру
-				go workers.GetDataSequentalTimer(ctx, pool, allExchanges[exKey])
+				//запускаем горутину воркера для получения обновления данных TickersData по таймеру
+				go workers.GetTickersDataSequentalTimer(ctx, pool, allExchanges[exKey])
+
+				//запускаем горутину воркера для получения обновления данных KlineData по таймеру
+				go workers.GetKlineDataSequentalTimer(ctx, pool, allExchanges[exKey])
 
 				//в зависимости от биржи для получнеия последней свечи могут использоваться один или два ws воркера
 				switch exKey {
@@ -376,7 +379,6 @@ func main() {
 			Category     string     `json:"category"`
 			Interval     string     `json:"interval"`
 			Klines       [][]string `json:"klines"`
-			LastCandle   []string   `json:"last_candle"`
 			Ts           int64      `json:"ts"`
 		}
 
@@ -419,7 +421,6 @@ func main() {
 			Category:     "",
 			Interval:     "",
 			Klines:       [][]string{},
-			LastCandle:   []string{},
 		}
 
 		//получим ключ
@@ -464,7 +465,6 @@ func main() {
 			response.Interval = KlineDataMu.Interval
 
 			response.Klines = KlineDataMu.Klines
-			response.LastCandle = KlineDataMu.LastCandle
 
 			response.Ts = KlineDataMu.Ts.UnixMilli()
 
@@ -488,7 +488,6 @@ func main() {
 			response.Category = KlineDataMu.Category
 			response.Interval = KlineDataMu.Interval
 			response.Klines = KlineDataMu.Klines
-			response.LastCandle = KlineDataMu.LastCandle
 
 			response.Ts = KlineDataMu.Ts.UnixMilli()
 
@@ -535,7 +534,7 @@ func main() {
 			return
 		}
 
-		slog.Debug("Получен запрос POST", "url", "/api/last_candle", "req", req)
+		// slog.Debug("Получен запрос POST", "url", "/api/last_candle", "req", req)
 
 		//проверим есть ли такая биржа
 		exchange, ok := allExchanges[req.ExchangeName]
@@ -576,7 +575,7 @@ func main() {
 
 		KlineDataMu.Lock()
 		//получим данные последней свечки
-		lastCandle := KlineDataMu.LastCandle
+		lastCandle := KlineDataMu.Klines[len(KlineDataMu.Klines)-1]
 		ts := KlineDataMu.Ts
 		//продлим время жизни данным
 		KlineDataMu.DeleteTime = time.Now().Add(exchange.FetchIntervals.KlineDeleteDeltaTime)
@@ -594,7 +593,7 @@ func main() {
 			"ts":            ts.UnixMilli(),
 		})
 
-		slog.Warn("Отправлена последняя свеча", "url", "/api/last_candle", "req", req, "lastCandle", lastCandle)
+		// slog.Warn("Отправлена последняя свеча", "url", "/api/last_candle", "req", req, "lastCandle", lastCandle)
 
 	})
 	//текущая информация по тикерам spot, perpetual. futures. options

@@ -24,7 +24,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.ExchangeData, wsKey st
 
 	slog.Info("Ws установлено соединение", "exchangeName", exchange.ExchangeName, "baseEndPoint", baseEndPoint)
 
-	//созадим запись для для вебсокета внтури биржи
+	//созадим запись для для вебсокета внутри биржи
 	exchange.Ws[wsKey] = &shared.WsData{
 		CmdChan:   cmdChan,
 		TopicList: []string{},
@@ -175,7 +175,7 @@ func StartWebSocket(ctx context.Context, exchange *shared.ExchangeData, wsKey st
 
 					// Взводим дедлайн (таймаут) на 5 секунд. Если за это время сервер не пришлет нам
 					// в обычном сообщении в ответ JSON {"op":"pong"}, сокет отключится и выдаст ошибку в чтении.
-					conn.SetReadDeadline(time.Now().Add(5 * time.Second)) //******* ЭТО ДЕЛАЕТЬСЯ НЕ ТУТ
+					// conn.SetReadDeadline(time.Now().Add(5 * time.Second)) //******* ЭТО ДЕЛАЕТСЯ НЕ ТУТ
 
 					// Отправляем в вебсокет
 					err := conn.WriteJSON(req)

@@ -102,101 +102,15 @@ type KlineDataMu struct {
 	Category string
 	Interval string
 
-	Klines     [][]string //массив формат TOHLC
-	LastCandle []string   //одна свечка формат TOHLC
+	Klines [][]string //массив формат TOHLC
+	// LastCandle []string   //одна свечка формат TOHLC
+	IsKlinesNeedsUpdate bool
 
 	Ts         time.Time
 	DeleteTime time.Time
 
 	sync.Mutex
 }
-
-// type KlineData struct {
-// 	Symbol   string
-// 	Contract string
-// 	Category string
-// 	Interval string
-
-// 	Klines [][]string //массив формат TOHLC
-
-// 	LastCandle []string //одна свечка формат TOHLC
-
-// 	Ts time.Time
-
-// 	DeleteTime time.Time
-// }
-
-// func (a *KlineDataMapMu) CreateKlineData(contract string, category string, interval string) {
-// 	a.Lock()
-
-// 	//составной ключ
-// 	key := fmt.Sprintf("%s:%s:%s", contract, category, interval)
-
-// 	//поищем запись в хеш таблице
-// 	_, ok := a.KlineDataMap[key]
-
-// 	//если записи не существует
-// 	if !ok {
-// 		//добавим запиись
-// 		a.KlineDataMap[key] = &KlineDataMu{}
-// 		slog.Info("Запись добавлена KlineData", "contract", contract, "category", category, "interval", interval)
-// 	} else {
-// 		//если зипись сущетвует
-// 		slog.Error("Ошибка при добавлении KlineData: запись уже существует.", "contract", contract, "category", category, "interval", interval)
-// 	}
-// 	a.Unlock()
-// }
-// func (a *KlineDataMapMu) DeleteKlineData(contract string, category string, interval string) {
-// 	a.Lock()
-
-// 	//составной ключ
-// 	key := fmt.Sprintf("%s:%s:%s", contract, category, interval)
-
-// 	//поищем запись в хеш таблице
-// 	_, ok := a.KlineDataMap[key]
-
-// 	//если записи не существует
-// 	if !ok {
-// 		//удалим запись
-// 		delete(a.KlineDataMap, key)
-// 		slog.Info("Запись удалена KlineData", "contract", contract, "category", category, "interval", interval)
-// 	} else {
-// 		//если зипись сущетвует
-// 		slog.Error("Ошибка при удалении KlineData: запись не существует.", "contract", contract, "category", category, "interval", interval)
-// 	}
-// 	a.Unlock()
-// }
-// func (a *KlineDataMapMu) SetDeleteTime(contract string, category string, interval string, deleteTime time.Time) {
-// 	a.Lock()
-
-// 	//составной ключ
-// 	key := fmt.Sprintf("%s:%s:%s", contract, category, interval)
-
-// 	//поищем запись в хеш таблице
-// 	item, ok := a.KlineDataMap[key]
-
-// 	//если записи не существует
-// 	if !ok {
-// 		//установим время удления
-// 		item.Lock()
-// 		item.KlineData.DeleteTime = deleteTime
-// 		item.Unlock()
-// 		slog.Info("Запись удалена KlineData", "contract", contract, "category", category, "interval", interval)
-// 	}
-// 	a.Unlock()
-// }
-
-// // функция для получения данных kline
-// func (k *KlineDataMu) GetKlineData() KlineData {
-
-// 	//запишем данные kline
-// 	k.Lock()
-// 	result := k.KlineData
-// 	k.Unlock()
-
-// 	// slog.Warn("Двнные KlineData сохранены", "klineData", klineData)
-// 	return result
-// }
 
 // интервалы запроса данных
 type FetchIntervals struct {
@@ -209,16 +123,6 @@ type FetchIntervals struct {
 	WsDeadLineDelta     time.Duration
 	WsCmdMsgDeleteDelta time.Duration
 }
-
-// type SymbolDataToDb struct {
-// 	ExchangeName    string
-// 	Symbol          string
-// 	LastPriceSpot   string
-// 	LastPriceLinear string
-// 	LinearData      []LinearData
-// 	OptionsData     []OptionsData
-// 	TimeMs          string
-// }
 
 type LastPriceResponse struct {
 	Symbol    string
@@ -294,19 +198,6 @@ type RvConeDataMu struct {
 	UpdateTime time.Time
 	sync.RWMutex
 }
-
-// метрики конуса для конкретного горизонта (DTE)
-// type ConePoint struct {
-// 	DTE     int     `json:"dte"`
-// 	Min     float64 `json:"min"`
-// 	P10     float64 `json:"p10"`
-// 	P25     float64 `json:"p25"`
-// 	Median  float64 `json:"median"`
-// 	P75     float64 `json:"p75"`
-// 	P90     float64 `json:"p90"`
-// 	Max     float64 `json:"max"`
-// 	Current float64 `json:"current"`
-// }
 
 type ConeLines struct {
 	DTE     []int     `json:"dte"`
