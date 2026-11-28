@@ -517,81 +517,18 @@ func GetTickersDataSequentalTimer(ctx context.Context, pool *pgxpool.Pool, excha
 			seconds := now.Second()
 
 			//получим минуты
-			// minutes := now.Minute()
+			minutes := now.Minute()
 
 			// на каждой 15 минуте и 10 секунде
-			// if (minutes%15 == 0) && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
+			if minutes%15 == 0 && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
+				// if (minutes%15 == 0) && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) {
 
-			// 	go func() {
-			// 		//заблокируем мьютекс
-			// 		restMu.Lock()
-			// 		defer restMu.Unlock()
-			// 		//соохраним данные тикеров для всех монет в бд - здесь их нге получаем
-			// 		SaveAllTickersDataToDb(ctx, pool, exchange)
+				go func() {
+					//соохраним данные тикеров для всех монет в бд
+					SaveAllTickersDataToDb(ctx, pool, exchange)
+				}()
 
-			// 		//потокобезопасно получим мап с данными kline
-			// 		exchange.AllKlineData.Lock()
-			// 		KlineDataMap := exchange.AllKlineData.KlineDataMap
-			// 		exchange.AllKlineData.Unlock()
-
-			// 		//для каждой записи kline
-			// 		for j := range KlineDataMap {
-
-			// 			//фильтр по интервалу
-			// 			if KlineDataMap[j].Interval == "15m" {
-
-			// 				//получим и сохраним в общий объект
-			// 				GetKlineData(
-			// 					exchange,
-			// 					KlineDataMap[j].Symbol,
-			// 					KlineDataMap[j].Contract,
-			// 					KlineDataMap[j].Category,
-			// 					KlineDataMap[j].Interval,
-			// 				)
-			// 				//сделаем паузу между запросами
-			// 				time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-			// 			}
-			// 		}
-
-			// 		//если это начало часа и 10 секунда - запросим остальные интервалы
-			// 		if minutes == 0 && seconds == int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) { //в начале каждого часа и 10 секунде
-
-			// 			//для каждого символа для текущей биржи
-			// 			for i := range exchange.AllSymbols {
-
-			// 				//потокобезопасно получим мап с данными kline
-			// 				exchange.AllKlineData.Lock()
-			// 				KlineDataMap := exchange.AllKlineData.KlineDataMap
-			// 				exchange.AllKlineData.Unlock()
-
-			// 				//для каждого интервала - нужно чтобы интервалы шли последовательно
-			// 				for _, interval := range []string{"1h", "1D", "1W"} {
-
-			// 					//для каждой записи kline
-			// 					for j := range KlineDataMap {
-
-			// 						//фильтр по интервалу
-			// 						if KlineDataMap[j].Interval == interval {
-
-			// 							//получим и сохраним в общий объект
-			// 							GetKlineData(
-			// 								exchange,
-			// 								exchange.AllSymbols[i].Symbol,
-			// 								KlineDataMap[j].Contract,
-			// 								KlineDataMap[j].Category,
-			// 								KlineDataMap[j].Interval,
-			// 							)
-			// 							//сделаем паузу между запросами
-			// 							time.Sleep(exchange.FetchIntervals.RestDataGetInterval)
-			// 						}
-			// 					}
-			// 				}
-			// 			}
-			// 		}
-
-			// 	}()
-
-			// } else
+			}
 			//на каждой 10 секунде
 			if seconds%int(exchange.FetchIntervals.TickersDataGetInterval.Seconds()) == 0 {
 
